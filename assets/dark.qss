@@ -1,0 +1,89 @@
+/* 전역 기본 설정 */
+QWidget {
+    background-color: #1E1E1E;
+    color: #EAEAEA;
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 13px;
+}
+
+/* 툴바 (Toolbar) */
+QToolBar {
+    background-color: #252526;
+    border-bottom: 1px solid #3C3C3C;
+    padding: 3px;
+    spacing: 5px;
+}
+
+QToolButton {
+    background-color: transparent;
+    color: #EAEAEA;
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+
+QToolButton:hover {
+    background-color: #3A3D41;
+}
+
+QToolButton:pressed {
+    background-color: #2D2D30;
+}
+
+/* 뷰어 영역 및 리스트 패널 */
+QListWidget, QScrollArea {
+    background-color: #252526;
+    border: 1px solid #3C3C3C;
+    border-radius: 4px;
+}
+
+/* QScrollArea 내부 위젯(라벨) 배경 동기화 */
+QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
+/* 좌측 작품 목록 구분선 */
+QFrame#SeparatorLine {
+    border: none;
+    background-color: #3C3C3C;
+    max-height: 1px;
+}
+
+/* 리스트 아이템 인터랙션 */
+QListWidget::item {
+    padding: 5px;
+    border-radius: 3px;
+}
+
+QListWidget::item:hover {
+    background-color: #3A3D41;
+}
+
+QListWidget::item:selected {
+    background-color: #094771;
+    color: #EAEAEA;
+}
+
+/* 스플리터 (중앙 분할선) */
+QSplitter::handle {
+    background-color: transparent;
+    width: 4px;
+}
+
+QSplitter::handle:hover {
+    background-color: #3A3D41;
+}
+
+QSplitter::handle:pressed {
+    background-color: #094771;
+}
+
+/* 상태바 (Status Bar) */
+QStatusBar {
+    background-color: #007ACC; /* Visual Studio Code 스타일의 파란색 상태바 포인트 컬러 (취향에 따라 #2D2D30으로 변경 가능) */
+    color: #FFFFFF;
+    border-top: 1px solid #3C3C3C;
+}
+
+QStatusBar QLabel {
+    background-color: transparent;
+}
