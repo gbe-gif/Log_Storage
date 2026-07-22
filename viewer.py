@@ -134,7 +134,7 @@ class SettingsDialog(QDialog):
         if not self.config.get("storage_root"):
             self.parent.show_warning("경고", "기본 저장소가 먼저 설정되어야 합니다.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg, *.webp);;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg *.webp);;All Files (*)")
         if path:
             if project_manager.set_cover_image(self.config["storage_root"], path):
                 self.parent.update_status("저장소 커버가 변경되었습니다.")
@@ -831,7 +831,7 @@ class MainWindow(QMainWindow):
     # 이미지 불러오기 및 에러 메시지 고도화
     # ==========================================
     def _process_import_dialog(self, target_project_name):
-        files, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "Images (*.png *.PNG *.webp)")
+        files, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "Images (*.png *.PNG *.jpg *.JPG *.jpeg *.JPEG *.webp *.WEBP);;All Files (*)")
         if not files: return None
         
         result = project_manager.analyze_import_files(files)
