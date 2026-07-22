@@ -5,7 +5,8 @@ import platform
 import subprocess
 import json
 
-# 기존 유틸리티 함수들
+# (기존 유틸리티 함수 및 휴지통 관련 함수들은 이전 버전과 완전히 동일하게 유지합니다. 생략 없이 전체를 복사/붙여넣기 하시면 됩니다.)
+
 def project_exists(base_folder, project_name):
     if not base_folder or not project_name: return False
     return os.path.exists(os.path.join(base_folder, project_name)) and os.path.isdir(os.path.join(base_folder, project_name))
@@ -88,9 +89,6 @@ def rename_project(base_folder, old_name, new_name):
         except: return False
     return False
 
-# ==========================================
-# 휴지통 처리
-# ==========================================
 def move_to_trash(base_folder, project_name):
     project_path = os.path.join(base_folder, project_name)
     if not os.path.exists(project_path): return False
@@ -160,13 +158,11 @@ def empty_trash(base_folder):
         except: return False
     return True
 
-# ==========================================
-# v2.0 추가: 프로젝트 메타데이터 (즐겨찾기, 북마크)
-# ==========================================
 def get_project_meta(project_path):
     """프로젝트 폴더 내의 메타데이터를 읽어 반환합니다."""
     meta_path = os.path.join(project_path, ".project_meta.json")
-    default_meta = {"favorite": False, "bookmarks": {}}
+    # v2.0 개선: turn_aliases 추가
+    default_meta = {"favorite": False, "bookmarks": {}, "turn_aliases": {}}
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
@@ -185,11 +181,7 @@ def save_project_meta(project_path, meta):
     except:
         return False
 
-# ==========================================
-# v2.0 추가: 저장소 커버 이미지
-# ==========================================
 def get_cover_path(base_folder):
-    """저장소 루트에 있는 커버 이미지 경로를 반환합니다."""
     if not base_folder: return None
     for ext in ['.png', '.jpg', '.jpeg', '.webp']:
         p = os.path.join(base_folder, f"cover{ext}")
@@ -197,9 +189,7 @@ def get_cover_path(base_folder):
     return None
 
 def set_cover_image(base_folder, source_path):
-    """지정된 이미지를 저장소 커버로 복사합니다."""
     if not base_folder or not source_path: return False
-    # 기존 커버 삭제
     delete_cover_image(base_folder)
     
     ext = os.path.splitext(source_path)[1].lower()
@@ -211,7 +201,6 @@ def set_cover_image(base_folder, source_path):
     except: return False
 
 def delete_cover_image(base_folder):
-    """저장소 루트의 커버 이미지를 삭제합니다."""
     if not base_folder: return False
     deleted = False
     for ext in ['.png', '.jpg', '.jpeg', '.webp']:
