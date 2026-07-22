@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
     QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
     QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem, QComboBox, QCheckBox, QTextBrowser, QSizePolicy
 )
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QIcon, QImage, QPixmap
+from PySide6.QtCore import Qt, QTimer, QRect, QRectF
+from PySide6.QtGui import QAction, QIcon, QImage, QPixmap, QPainter, QColor, QPen, QPainterPath
 
 import image_loader
 import image_merger
@@ -21,13 +21,187 @@ import config_manager
 # ==========================================
 # 프로그램 상수 정의
 # ==========================================
-APP_VERSION = "2.1.3"
-APP_BUILD = "2026.07.23"
+APP_VERSION = "2.2.0"
+APP_BUILD = "2026.07.24"
 APP_DEVELOPER = "게으른굼벵이"
+COVER_HEIGHT = 250  # 고정된 커버 영역 높이
 
 
 # ==========================================
-# 도움말 다이얼로그 (v2.1.3 업데이트)
+# 커버 이미지 크롭 위젯 및 다이얼로그 (v2.2 추가)
+# ==========================================
+class CropWidget(QWidget):
+    def __init__(self, image_path, parent=None):
+        super().__init__(parent)
+        self.image = QImage(image_path)
+        self.target_ratio = 2.0  # 2:1 비율 고정
+        self.scale = 1.0
+        self.img_x = 0
+        self.img_y = 0
+        self.last_mouse_pos = None
+        self._initialized = False
+        self.setMinimumSize(500, 400)
+        self.setMouseTracking(True)
+
+    def resizeEvent(self, event):
+        self._calc_crop_box()
+        if not self._initialized:
+            self._fit_image()
+            self._initialized = True
+        super().resizeEvent(event)
+
+    def _calc_crop_box(self):
+        margin = 40
+        w = self.width() - margin * 2
+        h = self.height() - margin * 2
+        if w <= 0 or h <= 0: return
+
+        if w / h > self.target_ratio:
+            w = h * self.target_ratio
+        else:
+            h = w / self.target_ratio
+
+        self.crop_w = w
+        self.crop_h = h
+        self.crop_x = (self.width() - w) / 2
+        self.crop_y = (self.height() - h) / 2
+        
+        self.min_scale = max(self.crop_w / self.image.width(), self.crop_h / self.image.height())
+        self.clamp_bounds()
+
+    def _fit_image(self):
+        self.scale = self.min_scale
+        self.img_x = self.crop_x + (self.crop_w - self.image.width() * self.scale) / 2
+        self.img_y = self.crop_y + (self.crop_h - self.image.height() * self.scale) / 2
+
+    def clamp_bounds(self):
+        if self.scale < self.min_scale:
+            self.scale = self.min_scale
+
+        scaled_w = self.image.width() * self.scale
+        scaled_h = self.image.height() * self.scale
+
+        if self.img_x > self.crop_x: 
+            self.img_x = self.crop_x
+        if self.img_y > self.crop_y: 
+            self.img_y = self.crop_y
+        if self.img_x + scaled_w < self.crop_x + self.crop_w:
+            self.img_x = self.crop_x + self.crop_w - scaled_w
+        if self.img_y + scaled_h < self.crop_y + self.crop_h:
+            self.img_y = self.crop_y + self.crop_h - scaled_h
+
+    def wheelEvent(self, event):
+        delta = event.angleDelta().y()
+        factor = 1.1 if delta > 0 else (1 / 1.1)
+
+        mx = event.position().x()
+        my = event.position().y()
+
+        ix = (mx - self.img_x) / self.scale
+        iy = (my - self.img_y) / self.scale
+
+        self.scale *= factor
+        if self.scale < self.min_scale:
+            self.scale = self.min_scale
+
+        self.img_x = mx - ix * self.scale
+        self.img_y = my - iy * self.scale
+        self.clamp_bounds()
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.last_mouse_pos = event.position()
+
+    def mouseMoveEvent(self, event):
+        if self.last_mouse_pos is not None:
+            dx = event.position().x() - self.last_mouse_pos.x()
+            dy = event.position().y() - self.last_mouse_pos.y()
+            self.img_x += dx
+            self.img_y += dy
+            self.last_mouse_pos = event.position()
+            self.clamp_bounds()
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        self.last_mouse_pos = None
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+
+        # 배경
+        painter.fillRect(self.rect(), QColor(30, 30, 30))
+
+        # 확대/축소 및 이동된 원본 이미지 드로잉
+        target_rect = QRectF(self.img_x, self.img_y, self.image.width() * self.scale, self.image.height() * self.scale)
+        painter.drawImage(target_rect, self.image)
+
+        # 크롭 영역 외곽 어둡게 처리
+        overlay = QColor(0, 0, 0, 180)
+        painter.fillRect(QRectF(0, 0, self.width(), self.crop_y), overlay)
+        painter.fillRect(QRectF(0, self.crop_y + self.crop_h, self.width(), self.height() - (self.crop_y + self.crop_h)), overlay)
+        painter.fillRect(QRectF(0, self.crop_y, self.crop_x, self.crop_h), overlay)
+        painter.fillRect(QRectF(self.crop_x + self.crop_w, self.crop_y, self.width() - (self.crop_x + self.crop_w), self.crop_h), overlay)
+
+        # 크롭 영역 안내선
+        painter.setPen(QPen(Qt.white, 2))
+        painter.drawRect(QRectF(self.crop_x, self.crop_y, self.crop_w, self.crop_h))
+
+    def get_cropped_image(self):
+        # 화면상의 크롭 영역을 원본 이미지 스케일에 맞춰 매핑
+        src_x = (self.crop_x - self.img_x) / self.scale
+        src_y = (self.crop_y - self.img_y) / self.scale
+        src_w = self.crop_w / self.scale
+        src_h = self.crop_h / self.scale
+
+        src_rect = QRect(int(src_x), int(src_y), int(src_w), int(src_h))
+        cropped = self.image.copy(src_rect)
+        
+        # 내부 표준 규격인 1200x600 (2:1)으로 고정 리사이징
+        return cropped.scaled(1200, 600, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+
+
+class CropDialog(QDialog):
+    def __init__(self, image_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("커버 이미지 크롭 (2:1)")
+        self.resize(800, 600)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 안내 문구
+        guide_label = QLabel("마우스 휠로 확대/축소, 드래그하여 위치를 이동하세요.")
+        guide_label.setAlignment(Qt.AlignCenter)
+        guide_label.setStyleSheet("color: #EAEAEA; font-size: 13px; padding-bottom: 5px;")
+        layout.addWidget(guide_label)
+        
+        self.crop_widget = CropWidget(image_path, self)
+        layout.addWidget(self.crop_widget, stretch=1)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        cancel_btn = QPushButton("취소")
+        cancel_btn.setFixedWidth(100)
+        cancel_btn.clicked.connect(self.reject)
+        
+        apply_btn = QPushButton("적용")
+        apply_btn.setFixedWidth(100)
+        apply_btn.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(apply_btn)
+        layout.addLayout(btn_layout)
+        
+    def get_cropped_image(self):
+        return self.crop_widget.get_cropped_image()
+
+
+# ==========================================
+# 도움말 다이얼로그
 # ==========================================
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
@@ -80,11 +254,10 @@ class HelpDialog(QDialog):
         
         <h3 style='color:#4DAAFA;'>🖼️ 저장소 커버</h3>
         <ul style='color:#D4D4D4;'>
-            <li><b>[⚙ 설정]</b>에서 저장소의 대표 커버 이미지를 등록할 수 있습니다.</li>
-            <li>권장 이미지 비율은 <b>3:1</b>입니다.</li>
-            <li>Cover와 로그 영역 사이의 <b>경계선을 드래그</b>하여 커버 높이를 자유롭게 조절할 수 있습니다.</li>
-            <li>조절한 높이는 <b>자동으로 저장</b>됩니다.</li>
-            <li>[▼ Cover] 버튼으로 <b>접기/펼치기</b>가 가능합니다.</li>
+            <li>커버 등록 시 원하는 영역을 <b>직접 크롭</b>할 수 있습니다.</li>
+            <li>편집 창에서 마우스 휠로 <b>확대·축소 및 위치 이동</b>이 가능합니다.</li>
+            <li>최종 커버 이미지는 프로그램 내부에서 항상 가장 깔끔한 <b>2:1 비율로 통일되어 저장</b>됩니다. (원본 이미지는 변경되지 않습니다.)</li>
+            <li>[▼ Cover] 버튼으로 <b>접기/펼치기</b>가 가능하며 상태는 자동 저장됩니다.</li>
         </ul>
         """
         browser.setHtml(html_content)
@@ -154,7 +327,7 @@ class SettingsDialog(QDialog):
         self.chk_expand_cover.setChecked(self.config.get("cover_expand_on_startup", False))
         self.chk_expand_cover.stateChanged.connect(self.toggle_cover_startup)
         
-        hint_label = QLabel("※ 권장 이미지 비율 3:1 (예: 1200 x 400)")
+        hint_label = QLabel("※ 등록 시 내장된 편집기로 이미지를 2:1 비율로 자동 크롭합니다.")
         hint_label.setStyleSheet("color: #094771; font-size: 11px;")
         
         cover_layout.addLayout(cover_btn_layout)
@@ -202,7 +375,7 @@ class SettingsDialog(QDialog):
 
         cover_path = project_manager.get_cover_path(root)
         if cover_path:
-            self.cover_name_label.setText(f"현재 커버: {os.path.basename(cover_path)}")
+            self.cover_name_label.setText("현재 커버: cover.png (내부 크롭 2:1)")
             self.btn_delete_cover.setEnabled(True)
         else:
             self.cover_name_label.setText("등록된 커버가 없습니다.")
@@ -224,14 +397,24 @@ class SettingsDialog(QDialog):
         if not self.config.get("storage_root"):
             self.parent.show_warning("경고", "기본 저장소가 먼저 설정되어야 합니다.")
             return
+            
         path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)")
         if path:
-            if project_manager.set_cover_image(self.config["storage_root"], path):
-                self.parent.update_status("저장소 커버가 변경되었습니다.")
-                self.update_cover_info()
-                self.parent.load_cover_image()
-            else:
-                self.parent.show_error("오류", "커버 이미지를 저장할 수 없습니다.")
+            dialog = CropDialog(path, self)
+            if dialog.exec() == QDialog.Accepted:
+                cropped_img = dialog.get_cropped_image()
+                
+                # 기존 커버 삭제
+                project_manager.delete_cover_image(self.config["storage_root"])
+                
+                # 새로운 2:1 크롭 커버 저장
+                save_path = os.path.join(self.config["storage_root"], "cover.png")
+                if cropped_img.save(save_path, "PNG"):
+                    self.parent.update_status("저장소 커버가 성공적으로 등록되었습니다.")
+                    self.update_cover_info()
+                    self.parent.load_cover_image()
+                else:
+                    self.parent.show_error("오류", "커버 이미지를 저장할 수 없습니다.")
 
     def delete_cover(self):
         if not self.config.get("storage_root"): return
@@ -554,14 +737,12 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.info_label)
 
         # ---------------------------------------------------------
-        # 우측 패널 구성
+        # 우측 패널 구성 (v2.2: Splitter 제거, 고정 높이 레이아웃)
         # ---------------------------------------------------------
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
-        
-        self.right_splitter = QSplitter(Qt.Vertical)
         
         self.cover_widget = QWidget()
         self.cover_widget.setStyleSheet("background-color: #1E1E1E;")
@@ -576,13 +757,13 @@ class MainWindow(QMainWindow):
         
         self.cover_image_label = QLabel()
         self.cover_image_label.setAlignment(Qt.AlignCenter)
-        self.cover_image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.cover_image_label.setMinimumHeight(30)
+        self.cover_image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.cover_image_label.setFixedHeight(COVER_HEIGHT)
         
         cover_layout.addWidget(self.btn_cover_toggle)
         cover_layout.addWidget(self.cover_image_label)
         
-        self.right_splitter.addWidget(self.cover_widget)
+        right_layout.addWidget(self.cover_widget)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -596,12 +777,7 @@ class MainWindow(QMainWindow):
         self.scroll_layout.addStretch()
         self.scroll_area.setWidget(self.scroll_widget)
         
-        self.right_splitter.addWidget(self.scroll_area)
-        
-        self.right_splitter.setCollapsible(0, False)
-        self.right_splitter.setCollapsible(1, False)
-        
-        right_layout.addWidget(self.right_splitter)
+        right_layout.addWidget(self.scroll_area)
 
         self.splitter.addWidget(left_panel)
         self.splitter.addWidget(right_panel)
@@ -609,15 +785,10 @@ class MainWindow(QMainWindow):
         saved_sizes = self.config.get("splitter_sizes", [220, 980])
         self.splitter.setSizes(saved_sizes)
         self.splitter.splitterMoved.connect(self.on_splitter_moved)
-        
-        saved_v_sizes = self.config.get("cover_splitter_sizes", [200, 800])
-        self.right_splitter.setSizes(saved_v_sizes)
-        self.right_splitter.splitterMoved.connect(self.on_cover_splitter_moved)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.update_status("준비 완료")
-
 
     # ==========================================
     # 렌더링 및 UI 관리 로직
@@ -625,14 +796,6 @@ class MainWindow(QMainWindow):
     def on_splitter_moved(self, pos, index):
         self.config["splitter_sizes"] = self.splitter.sizes()
         config_manager.save_config(self.config)
-
-    def on_cover_splitter_moved(self, pos, index):
-        if self.is_cover_expanded:
-            self.config["cover_splitter_sizes"] = self.right_splitter.sizes()
-            config_manager.save_config(self.config)
-            cover_path = project_manager.get_cover_path(self.current_folder)
-            if cover_path:
-                self._render_cover(cover_path)
 
     def get_available_width(self):
         return self.scroll_area.viewport().width() - 40
@@ -693,22 +856,24 @@ class MainWindow(QMainWindow):
         if self.is_cover_expanded:
             self.btn_cover_toggle.setText("▼ Cover")
             self.cover_image_label.show()
-            saved_v_sizes = self.config.get("cover_splitter_sizes", [200, 800])
-            self.right_splitter.setSizes(saved_v_sizes)
-            QTimer.singleShot(10, lambda: self._render_cover(cover_path))
+            self._render_cover(cover_path)
         else:
             self.btn_cover_toggle.setText("▶ Cover")
             self.cover_image_label.hide()
 
     def _render_cover(self, path):
-        width = self.cover_image_label.width()
-        height = self.cover_image_label.height()
-        if width < 10 or height < 10: return
+        # 2:1 크롭된 원본을 가로에 꽉 차도록 채운 뒤, 고정된 상하 높이(COVER_HEIGHT)를 초과하는 부분은 중앙 기준으로 자름
+        width = self.cover_widget.width()
+        height = COVER_HEIGHT
+        if width < 10: return
         
         img = QImage(path)
         if not img.isNull():
-            scaled = img.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.cover_image_label.setPixmap(QPixmap.fromImage(scaled))
+            scaled = img.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            x = (scaled.width() - width) // 2
+            y = (scaled.height() - height) // 2
+            pix = QPixmap.fromImage(scaled.copy(x, y, width, height))
+            self.cover_image_label.setPixmap(pix)
 
     def toggle_cover(self):
         self.is_cover_expanded = not self.is_cover_expanded
@@ -985,7 +1150,7 @@ class MainWindow(QMainWindow):
 
 
     # ==========================================
-    # 이미지 불러오기 및 에러 메시지 (v2.1.3: 모든 이미지 형식 필터 적용)
+    # 이미지 불러오기 및 에러 메시지
     # ==========================================
     def _process_import_dialog(self, target_project_name):
         files, _ = QFileDialog.getOpenFileNames(
