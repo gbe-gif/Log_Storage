@@ -5,8 +5,6 @@ import platform
 import subprocess
 import json
 
-# (기존 project_exists, create_project, copy_images, analyze_import_files, 
-# get_project_summary, open_project_folder, rename_project 함수는 v1.8과 동일하므로 전체 코드에 포함되어 유지됩니다.)
 def project_exists(base_folder, project_name):
     if not base_folder or not project_name:
         return False
@@ -103,21 +101,20 @@ def rename_project(base_folder, old_name, new_name):
             return False
     return False
 
-
 # ==========================================
-# v1.9 변경: 휴지통 기반 삭제 시스템
+# 휴지통 및 메타데이터 처리 (v1.9.1 개선)
 # ==========================================
-
 def move_to_trash(base_folder, project_name):
-    """프로젝트를 .Trash 폴더로 이동하고 메타데이터를 저장합니다."""
     project_path = os.path.join(base_folder, project_name)
     if not os.path.exists(project_path):
         return False
 
+    # v1.9.1: 이동 전 요약 정보를 미리 가져옴
+    info = get_project_summary(project_path)
+    
     trash_dir = os.path.join(base_folder, ".Trash")
     os.makedirs(trash_dir, exist_ok=True)
 
-    # 중복 삭제 시 충돌 방지를 위해 폴더명에 타임스탬프 추가 가능성 대비
     trashed_name = project_name
     trash_project_path = os.path.join(trash_dir, trashed_name)
     
@@ -130,20 +127,24 @@ def move_to_trash(base_folder, project_name):
 
     try:
         shutil.move(project_path, trash_project_path)
+        
+        # v1.9.1: 추가 메타데이터 저장
         meta_data = {
             "original_name": project_name,
             "trashed_name": trashed_name,
-            "deleted_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "deleted_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "turn_count": info["turn_count"],
+            "image_count": info["image_count"],
+            "last_modified": info["last_modified"]
         }
         with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta_data, f, ensure_ascii=False, indent=2)
+            json.dump(meta_data, f, ensure_ascii=False, indent=4)
         return True
     except Exception as e:
         print(f"[오류] 휴지통 이동 실패: {e}")
         return False
 
 def get_trashed_projects(base_folder):
-    """휴지통 내의 메타데이터를 읽어 삭제된 프로젝트 목록을 반환합니다."""
     trash_dir = os.path.join(base_folder, ".Trash")
     if not os.path.exists(trash_dir):
         return []
@@ -158,17 +159,14 @@ def get_trashed_projects(base_folder):
                     trashed_list.append(data)
             except:
                 pass
-    # 삭제일자 기준 최신순 정렬
     return sorted(trashed_list, key=lambda x: x.get("deleted_at", ""), reverse=True)
 
 def restore_from_trash(base_folder, trashed_name, original_name):
-    """휴지통의 프로젝트를 원래 위치로 복원합니다."""
     trash_dir = os.path.join(base_folder, ".Trash")
     trash_project_path = os.path.join(trash_dir, trashed_name)
     meta_path = os.path.join(trash_dir, f"{trashed_name}.meta.json")
     restore_path = os.path.join(base_folder, original_name)
     
-    # 만약 동일한 이름의 프로젝트가 이미 생성되어 있다면 타임스탬프를 붙여서 복원
     if os.path.exists(restore_path):
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         restore_path = os.path.join(base_folder, f"{original_name}_복원_{timestamp}")
@@ -183,7 +181,6 @@ def restore_from_trash(base_folder, trashed_name, original_name):
         return False
 
 def permanent_delete(base_folder, trashed_name):
-    """휴지통에 있는 단일 프로젝트를 영구 삭제합니다."""
     trash_dir = os.path.join(base_folder, ".Trash")
     trash_project_path = os.path.join(trash_dir, trashed_name)
     meta_path = os.path.join(trash_dir, f"{trashed_name}.meta.json")
@@ -199,7 +196,6 @@ def permanent_delete(base_folder, trashed_name):
         return False
 
 def empty_trash(base_folder):
-    """휴지통 폴더 전체를 비웁니다."""
     trash_dir = os.path.join(base_folder, ".Trash")
     if os.path.exists(trash_dir):
         try:

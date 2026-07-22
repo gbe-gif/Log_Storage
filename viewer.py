@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QStatusBar, QSplitter,
     QListWidget, QScrollArea, QLabel, QVBoxLayout, QWidget, QFrame,
     QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
-    QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem
+    QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem, QComboBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QIcon
@@ -18,31 +18,30 @@ import image_card
 import project_manager
 import config_manager
 
-
 # ==========================================
-# 설정 창 다이얼로그
+# 설정 창 다이얼로그 (UI 통일)
 # ==========================================
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None, config=None):
+    def __init__(self, parent, config):
         super().__init__(parent)
         self.setWindowTitle("설정")
-        self.resize(500, 400)
+        self.resize(450, 420)
         self.config = config
+        self.parent = parent
         
-        main_layout = QVBoxLayout(self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
         
-        # 1. 프로그램 정보
         info_group = QGroupBox("프로그램 정보")
         info_layout = QVBoxLayout(info_group)
-        info_layout.addWidget(QLabel("<b>PR Log Image Storage</b>"))
-        info_layout.addWidget(QLabel("Version: v1.9"))
+        info_layout.addWidget(QLabel("<b>Log Storage</b>"))  # 명칭 통일
+        info_layout.addWidget(QLabel("Version: v1.9.1"))
         info_layout.addWidget(QLabel("Developer: -"))
         info_layout.addWidget(QLabel("Build: 2026.07"))
         info_layout.addWidget(QLabel(f"Python Version: {sys.version.split()[0]}"))
         info_layout.addWidget(QLabel(f"PySide Version: {PySide6.__version__}"))
-        main_layout.addWidget(info_group)
+        layout.addWidget(info_group)
         
-        # 2. 기본 저장소 설정
         storage_group = QGroupBox("기본 저장소 설정")
         storage_layout = QVBoxLayout(storage_group)
         self.storage_label = QLabel(self.config.get("storage_root", ""))
@@ -52,12 +51,12 @@ class SettingsDialog(QDialog):
         btn_layout1 = QHBoxLayout()
         btn_layout1.addWidget(self.storage_label)
         change_btn1 = QPushButton("변경...")
+        change_btn1.setFixedWidth(80)
         change_btn1.clicked.connect(self.change_storage)
         btn_layout1.addWidget(change_btn1)
         storage_layout.addLayout(btn_layout1)
-        main_layout.addWidget(storage_group)
+        layout.addWidget(storage_group)
         
-        # 3. v1.9 추가: RP Preview Studio 설정
         rp_group = QGroupBox("RP Preview Studio 경로 설정")
         rp_layout = QVBoxLayout(rp_group)
         self.rp_label = QLabel(self.config.get("rp_preview_studio_path", "등록된 경로가 없습니다."))
@@ -67,17 +66,18 @@ class SettingsDialog(QDialog):
         btn_layout2 = QHBoxLayout()
         btn_layout2.addWidget(self.rp_label)
         change_btn2 = QPushButton("찾아보기...")
+        change_btn2.setFixedWidth(80)
         change_btn2.clicked.connect(self.change_rp_path)
         btn_layout2.addWidget(change_btn2)
         rp_layout.addLayout(btn_layout2)
-        main_layout.addWidget(rp_group)
+        layout.addWidget(rp_group)
         
-        main_layout.addStretch()
+        layout.addStretch()
         
         close_btn = QPushButton("닫기")
         close_btn.setFixedWidth(80)
         close_btn.clicked.connect(self.accept)
-        main_layout.addWidget(close_btn, alignment=Qt.AlignRight)
+        layout.addWidget(close_btn, alignment=Qt.AlignRight)
 
     def change_storage(self):
         current_root = self.config.get("storage_root", "")
@@ -86,6 +86,11 @@ class SettingsDialog(QDialog):
             self.config["storage_root"] = new_dir
             self.storage_label.setText(new_dir)
             config_manager.save_config(self.config)
+            
+            # v1.9.1: 새 저장소 열기 UX 개선
+            if new_dir != self.parent.current_folder:
+                if self.parent.show_confirm("저장소 변경", "저장소가 변경되었습니다.\n새 저장소를 지금 열겠습니까?"):
+                    self.parent.open_specific_folder(new_dir)
 
     def change_rp_path(self):
         path, _ = QFileDialog.getOpenFileName(self, "RP Preview Studio 실행 파일 선택", "", "Executable (*.exe);;All Files (*)")
@@ -93,22 +98,43 @@ class SettingsDialog(QDialog):
             self.config["rp_preview_studio_path"] = path
             self.rp_label.setText(path)
             config_manager.save_config(self.config)
+            self.parent.update_status("RP Preview Studio 경로가 저장되었습니다.")
 
 
 # ==========================================
-# v1.9 추가: 휴지통 다이얼로그
+# 휴지통 다이얼로그 (UI/UX 고도화)
 # ==========================================
 class TrashDialog(QDialog):
     def __init__(self, base_folder, parent=None):
         super().__init__(parent)
         self.setWindowTitle("휴지통 관리")
-        self.resize(500, 350)
+        self.resize(550, 400)
         self.base_folder = base_folder
+        self.parent = parent
         
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(15, 15, 15, 15)
         
+        content_layout = QHBoxLayout()
+        
+        # 좌측 리스트
         self.list_widget = QListWidget()
-        layout.addWidget(self.list_widget)
+        self.list_widget.itemSelectionChanged.connect(self.on_selection_changed)
+        content_layout.addWidget(self.list_widget, stretch=2)
+        
+        # 우측 메타데이터 패널
+        self.detail_label = QLabel("항목을 선택하면\n상세 정보가 표시됩니다.")
+        self.detail_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.detail_label.setStyleSheet("padding: 10px; background-color: #2D2D30; border-radius: 4px;")
+        content_layout.addWidget(self.detail_label, stretch=1)
+        
+        layout.addLayout(content_layout)
+        
+        # 상태 안내 라벨
+        self.empty_label = QLabel("휴지통이 비어 있습니다.")
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setStyleSheet("color: #A0A0A0;")
+        layout.addWidget(self.empty_label)
         
         btn_layout = QHBoxLayout()
         self.btn_restore = QPushButton("복원")
@@ -131,64 +157,80 @@ class TrashDialog(QDialog):
     def refresh_list(self):
         self.list_widget.clear()
         trashed_items = project_manager.get_trashed_projects(self.base_folder)
+        
+        if not trashed_items:
+            self.empty_label.show()
+            self.btn_empty.setEnabled(False)
+        else:
+            self.empty_label.hide()
+            self.btn_empty.setEnabled(True)
+            
         for item_data in trashed_items:
-            text = f"{item_data['original_name']}  (삭제일: {item_data['deleted_at']})"
+            text = f"{item_data['original_name']} ({item_data['deleted_at'][:10]})"
             list_item = QListWidgetItem(text)
             list_item.setData(Qt.UserRole, item_data)
             self.list_widget.addItem(list_item)
+            
+        self.on_selection_changed()
+
+    def on_selection_changed(self):
+        item = self.list_widget.currentItem()
+        if not item:
+            self.btn_restore.setEnabled(False)
+            self.btn_delete.setEnabled(False)
+            self.detail_label.setText("항목을 선택하면\n상세 정보가 표시됩니다.")
+            return
+
+        self.btn_restore.setEnabled(True)
+        self.btn_delete.setEnabled(True)
+        data = item.data(Qt.UserRole)
+        
+        detail_text = (
+            f"<b style='font-size:14px; color:#EAEAEA;'>{data['original_name']}</b><br><br>"
+            f"Turn: {data.get('turn_count', 0)}<br>"
+            f"Image: {data.get('image_count', 0)}<br>"
+            f"마지막 수정: {data.get('last_modified', '-')}<br>"
+            f"삭제일: {data.get('deleted_at', '-')}"
+        )
+        self.detail_label.setText(detail_text)
 
     def restore_selected(self):
         item = self.list_widget.currentItem()
-        if not item:
-            QMessageBox.warning(self, "경고", "복원할 항목을 선택해주세요.")
-            return
-            
+        if not item: return
         data = item.data(Qt.UserRole)
-        success = project_manager.restore_from_trash(self.base_folder, data['trashed_name'], data['original_name'])
-        if success:
-            QMessageBox.information(self, "복원", f"'{data['original_name']}' 복원이 완료되었습니다.")
+        if project_manager.restore_from_trash(self.base_folder, data['trashed_name'], data['original_name']):
+            self.parent.update_status(f"'{data['original_name']}' 복원이 완료되었습니다.")
             self.refresh_list()
-        else:
-            QMessageBox.warning(self, "오류", "복원 중 문제가 발생했습니다.")
 
     def delete_selected(self):
         item = self.list_widget.currentItem()
-        if not item:
-            return
-            
+        if not item: return
         data = item.data(Qt.UserRole)
-        reply = QMessageBox.question(self, "영구 삭제", f"'{data['original_name']}'을(를) 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.", QMessageBox.Yes | QMessageBox.No)
         
-        if reply == QMessageBox.Yes:
-            success = project_manager.permanent_delete(self.base_folder, data['trashed_name'])
-            if success:
+        if self.parent.show_confirm("영구 삭제", f"'{data['original_name']}'을(를) 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."):
+            if project_manager.permanent_delete(self.base_folder, data['trashed_name']):
+                self.parent.update_status(f"'{data['original_name']}' 영구 삭제가 완료되었습니다.")
                 self.refresh_list()
-            else:
-                QMessageBox.warning(self, "오류", "삭제 중 문제가 발생했습니다.")
 
     def empty_all(self):
-        if self.list_widget.count() == 0:
-            return
-            
-        reply = QMessageBox.question(self, "휴지통 비우기", "휴지통의 모든 항목을 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.", QMessageBox.Yes | QMessageBox.No)
-        
-        if reply == QMessageBox.Yes:
-            success = project_manager.empty_trash(self.base_folder)
-            if success:
+        if self.list_widget.count() == 0: return
+        if self.parent.show_confirm("휴지통 비우기", "휴지통의 모든 항목을 영구 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다."):
+            if project_manager.empty_trash(self.base_folder):
+                self.parent.update_status("휴지통을 모두 비웠습니다.")
                 self.refresh_list()
-            else:
-                QMessageBox.warning(self, "오류", "휴지통 비우기 중 문제가 발생했습니다.")
 
 
+# ==========================================
+# Main Window
+# ==========================================
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        self.setWindowTitle("PR Log Image Storage")
+        self.setWindowTitle("Log Storage") # v1.9.1 명칭 통일
         self.resize(1200, 800)
         self.setMinimumSize(800, 600)
         
-        # v1.9: 프로그램 아이콘 적용
         current_dir = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(current_dir, "assets", "icon.ico")
         if os.path.exists(icon_path):
@@ -202,37 +244,68 @@ class MainWindow(QMainWindow):
         self.turn_map = {}
         
         self._setup_ui()
+        self.update_action_states() # 초기 상태 설정
+
+    # ==========================================
+    # 공통 메시지 박스 리팩터링
+    # ==========================================
+    def show_info(self, title, msg):
+        QMessageBox.information(self, title, msg)
+
+    def show_warning(self, title, msg):
+        QMessageBox.warning(self, title, msg)
+
+    def show_error(self, title, msg):
+        QMessageBox.critical(self, title, msg)
+
+    def show_confirm(self, title, msg):
+        reply = QMessageBox.question(self, title, msg, QMessageBox.Yes | QMessageBox.No)
+        return reply == QMessageBox.Yes
+        
+    def update_status(self, msg):
+        self.status_bar.showMessage(msg)
+
+    # ==========================================
+    # 툴바 상태 자동 관리
+    # ==========================================
+    def update_action_states(self):
+        has_storage = bool(self.current_folder)
+        has_project = bool(self.current_project)
+        
+        self.action_add.setEnabled(has_storage)
+        self.action_trash.setEnabled(has_storage)
+        self.project_menu_btn.setEnabled(has_storage and has_project)
 
     def _setup_ui(self):
         toolbar = QToolBar("Main Toolbar")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        action_open = QAction("📂 폴더 열기", self)
-        action_new = QAction("📁 새 작품", self)
-        action_add = QAction("📥 이미지 추가", self)
-        action_refresh = QAction("🔄 새로고침", self)
-        action_rp_studio = QAction("🚀 RP Preview Studio", self)
-        action_trash = QAction("🗑 휴지통", self)
-        action_settings = QAction("⚙ 설정", self)
+        self.action_open = QAction("📂 폴더 열기", self)
+        self.action_new = QAction("📁 새 작품", self)
+        self.action_add = QAction("📥 이미지 추가", self)
+        self.action_refresh = QAction("🔄 새로고침", self)
+        self.action_rp_studio = QAction("🚀 RP Preview Studio", self)
+        self.action_trash = QAction("🗑 휴지통", self)
+        self.action_settings = QAction("⚙ 설정", self)
 
-        action_open.triggered.connect(self.open_folder)
-        action_new.triggered.connect(self.create_new_project)
-        action_add.triggered.connect(self.add_images_to_project)
-        action_refresh.triggered.connect(self.on_action_refresh)
-        action_rp_studio.triggered.connect(self.launch_rp_studio)
-        action_trash.triggered.connect(self.open_trash_dialog)
-        action_settings.triggered.connect(self.open_settings_dialog)
+        self.action_open.triggered.connect(self.open_folder)
+        self.action_new.triggered.connect(self.create_new_project)
+        self.action_add.triggered.connect(self.add_images_to_project)
+        self.action_refresh.triggered.connect(self.on_action_refresh)
+        self.action_rp_studio.triggered.connect(self.launch_rp_studio)
+        self.action_trash.triggered.connect(self.open_trash_dialog)
+        self.action_settings.triggered.connect(self.open_settings_dialog)
 
-        toolbar.addAction(action_open)
-        toolbar.addAction(action_new)
-        toolbar.addAction(action_add)
-        toolbar.addAction(action_refresh)
+        toolbar.addAction(self.action_open)
+        toolbar.addAction(self.action_new)
+        toolbar.addAction(self.action_add)
+        toolbar.addAction(self.action_refresh)
         toolbar.addSeparator()
-        toolbar.addAction(action_rp_studio)
+        toolbar.addAction(self.action_rp_studio)
         toolbar.addSeparator()
-        toolbar.addAction(action_trash)
-        toolbar.addAction(action_settings)
+        toolbar.addAction(self.action_trash)
+        toolbar.addAction(self.action_settings)
 
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
@@ -242,16 +315,21 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(8)
 
+        # -- 작품 목록 헤더 & 정렬 기능 추가 --
         header_layout = QHBoxLayout()
         title_label = QLabel("작품 목록")
         font = title_label.font()
         font.setBold(True)
         title_label.setFont(font)
         
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["최근 수정순", "이름순"])
+        self.sort_combo.setCurrentIndex(0 if self.config.get("project_sort", "modified") == "modified" else 1)
+        self.sort_combo.currentIndexChanged.connect(self.on_sort_changed)
+        
         self.project_menu_btn = QToolButton()
         self.project_menu_btn.setText("⋮")
         self.project_menu_btn.setPopupMode(QToolButton.InstantPopup)
-        self.project_menu_btn.setEnabled(False)
         
         project_menu = QMenu(self)
         action_open_folder = QAction("📂 프로젝트 폴더 열기", self)
@@ -266,10 +344,10 @@ class MainWindow(QMainWindow):
         project_menu.addSeparator()
         project_menu.addAction(action_rename)
         project_menu.addAction(action_delete)
-        
         self.project_menu_btn.setMenu(project_menu)
 
         header_layout.addWidget(title_label)
+        header_layout.addWidget(self.sort_combo)
         header_layout.addStretch()
         header_layout.addWidget(self.project_menu_btn)
         
@@ -335,7 +413,7 @@ class MainWindow(QMainWindow):
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("준비 완료")
+        self.update_status("준비 완료")
 
 
     def get_available_width(self):
@@ -359,12 +437,25 @@ class MainWindow(QMainWindow):
         
         self.viewer_label.show()
         self.info_label.setText("프로젝트 정보가 없습니다.")
+        
+        self.current_project = None
+        self.update_action_states()
+
+    def on_sort_changed(self, index):
+        sort_method = "modified" if index == 0 else "name"
+        self.config["project_sort"] = sort_method
+        config_manager.save_config(self.config)
+        self.update_status("목록 정렬 방식이 저장되었습니다.")
+        if self.current_folder:
+            self.reload_project_list(select_name=self.current_project)
 
     def reload_project_list(self, select_name=None):
         self.project_list.blockSignals(True)
         self.project_list.clear()
         
-        projects = image_loader.load_projects(self.current_folder)
+        sort_method = self.config.get("project_sort", "modified")
+        projects = image_loader.load_projects(self.current_folder, sort_method)
+        
         for project in projects:
             self.project_list.addItem(project)
             
@@ -379,142 +470,102 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self, self.config)
         dialog.exec()
 
-    # ==========================================
-    # v1.9: 휴지통 & 프로그램 연동 기능
-    # ==========================================
     def open_trash_dialog(self):
-        if not self.current_folder:
-            QMessageBox.warning(self, "경고", "먼저 '📂 폴더 열기'를 통해 기본 저장소를 선택해주세요.")
-            return
-            
         dialog = TrashDialog(self.current_folder, self)
         dialog.exec()
-        # 다이얼로그 종료 후 프로젝트 복원이 있을 수 있으므로 리스트 새로고침
         self.on_action_refresh()
 
     def launch_rp_studio(self):
         path = self.config.get("rp_preview_studio_path", "")
-        if not path:
-            QMessageBox.information(self, "안내", "RP Preview Studio 경로가 설정되어 있지 않습니다.\n설정 창에서 실행 파일(.exe)을 먼저 지정해주세요.")
-            self.open_settings_dialog()
-            return
-            
-        if not os.path.exists(path):
-            QMessageBox.warning(self, "경고", "설정된 경로에 RP Preview Studio 파일이 존재하지 않습니다.\n경로를 다시 확인해주세요.")
-            self.open_settings_dialog()
-            return
-            
+        if not path or not os.path.exists(path):
+            if self.show_confirm("경로 미지정", "RP Preview Studio 경로가 설정되어 있지 않거나 존재하지 않습니다.\n지금 실행 파일을 선택하시겠습니까?"):
+                path, _ = QFileDialog.getOpenFileName(self, "RP Preview Studio 실행 파일 선택", "", "Executable (*.exe);;All Files (*)")
+                if path:
+                    self.config["rp_preview_studio_path"] = path
+                    config_manager.save_config(self.config)
+                    self.update_status("RP Preview Studio 경로를 저장했습니다.")
+                else:
+                    return
+            else:
+                return
+                
         try:
             subprocess.Popen([path])
-            self.status_bar.showMessage("RP Preview Studio를 실행했습니다.")
+            self.update_status("RP Preview Studio를 실행했습니다.")
         except Exception as e:
-            QMessageBox.critical(self, "오류", f"프로그램을 실행하는 중 문제가 발생했습니다:\n{e}")
+            self.show_error("오류", f"프로그램을 실행하는 중 문제가 발생했습니다:\n{e}")
 
     def open_folder(self):
         start_dir = self.config.get("storage_root", "")
         folder_path = QFileDialog.getExistingDirectory(self, "저장소 폴더 선택", start_dir)
-        
         if folder_path:
-            self.current_folder = folder_path
-            self.current_project = None
-            self.project_menu_btn.setEnabled(False)
-            self.clear_image_cards()
-            
-            self.reload_project_list()
-            
-            count = self.project_list.count()
-            if count > 0:
-                self.status_bar.showMessage(f"작품 {count}개를 불러왔습니다.")
-            else:
-                self.status_bar.showMessage("작품이 없습니다.")
+            self.open_specific_folder(folder_path)
 
-    def _check_project_selected(self):
-        if not self.current_folder or not self.current_project:
-            QMessageBox.information(self, "안내", "먼저 관리할 작품(프로젝트)을 선택해주세요.")
-            return False
-        return True
+    def open_specific_folder(self, folder_path):
+        self.current_folder = folder_path
+        self.clear_image_cards()
+        self.reload_project_list()
+        self.update_action_states()
+        
+        count = self.project_list.count()
+        if count > 0:
+            self.update_status(f"저장소 변경 완료: 작품 {count}개를 불러왔습니다.")
+        else:
+            self.update_status("저장소 변경 완료: 작품이 없습니다.")
 
     def open_current_project_folder(self):
-        if not self._check_project_selected():
-            return
-            
         project_path = os.path.join(self.current_folder, self.current_project)
-        success = project_manager.open_project_folder(project_path)
-        if not success:
-            QMessageBox.warning(self, "오류", "프로젝트 폴더를 열 수 없습니다.")
+        if not project_manager.open_project_folder(project_path):
+            self.show_error("오류", "프로젝트 폴더를 열 수 없습니다.")
 
     def rename_current_project(self):
-        if not self._check_project_selected():
-            return
-
         new_name, ok = QInputDialog.getText(self, "프로젝트 이름 변경", "새 이름을 입력하세요:", text=self.current_project)
-        if not ok:
-            return
+        if not ok: return
         new_name = new_name.strip()
         if not new_name:
-            QMessageBox.warning(self, "경고", "프로젝트 이름이 비어있습니다.")
+            self.show_warning("경고", "프로젝트 이름이 비어있습니다.")
             return
         if new_name == self.current_project:
             return
         if project_manager.project_exists(self.current_folder, new_name):
-            QMessageBox.warning(self, "경고", f"'{new_name}'(은)는 이미 존재하는 프로젝트명입니다.")
+            self.show_warning("경고", f"'{new_name}'(은)는 이미 존재하는 프로젝트명입니다.")
             return
             
-        success = project_manager.rename_project(self.current_folder, self.current_project, new_name)
-        if success:
+        if project_manager.rename_project(self.current_folder, self.current_project, new_name):
             self.reload_project_list(select_name=new_name)
-            self.status_bar.showMessage(f"프로젝트 이름이 '{new_name}'(으)로 변경되었습니다.")
+            self.update_status(f"프로젝트 이름이 '{new_name}'(으)로 변경되었습니다.")
         else:
-            QMessageBox.warning(self, "오류", "이름 변경 중 오류가 발생했습니다. 권한이나 파일 잠금을 확인하세요.")
+            self.show_error("오류", "이름 변경 중 오류가 발생했습니다. 권한이나 파일 잠금을 확인하세요.")
 
     def delete_current_project(self):
-        if not self._check_project_selected():
-            return
-
         project_path = os.path.join(self.current_folder, self.current_project)
         info = project_manager.get_project_summary(project_path)
-
         preview_text = (
             f"'{self.current_project}' 프로젝트를 휴지통으로 이동하시겠습니까?\n\n"
             f"Turn: {info['turn_count']}\n"
             f"이미지: {info['image_count']}"
         )
-
-        reply = QMessageBox.question(self, "프로젝트 삭제", preview_text, QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.No:
-            return
-            
-        # v1.9: 휴지통으로 이동
-        success = project_manager.move_to_trash(self.current_folder, self.current_project)
-        if success:
-            self.current_project = None
-            self.project_menu_btn.setEnabled(False)
-            self.clear_image_cards()
-            self.reload_project_list()
-            self.status_bar.showMessage("프로젝트가 휴지통으로 이동되었습니다.")
-        else:
-            QMessageBox.warning(self, "오류", "휴지통 이동 중 오류가 발생했습니다. 권한이나 열려있는 파일을 확인하세요.")
-
+        if self.show_confirm("프로젝트 삭제", preview_text):
+            if project_manager.move_to_trash(self.current_folder, self.current_project):
+                self.clear_image_cards()
+                self.reload_project_list()
+                self.update_status("프로젝트가 휴지통으로 이동되었습니다.")
+            else:
+                self.show_error("오류", "휴지통 이동 중 오류가 발생했습니다. 권한이나 열려있는 파일을 확인하세요.")
 
     def _process_import_dialog(self, target_project_name):
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "이미지 선택", "", "PNG Images (*.png *.PNG)"
-        )
-        if not files:
-            return None
+        files, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "PNG Images (*.png *.PNG)")
+        if not files: return None
 
         result = project_manager.analyze_import_files(files)
         valid_files = result["valid_files"]
-        invalid_files = result["invalid_files"]
-        turns = result["turns"]
-        turn_ranges = result["turn_ranges"]
-
+        
         if not valid_files:
-            QMessageBox.warning(self, "경고", "가져올 수 있는 정상적인 이미지 파일이 없습니다.")
+            self.show_warning("경고", "가져올 수 있는 정상적인 이미지 파일이 없습니다.")
             return None
 
         merge_preview_lines = []
-        for r in turn_ranges:
+        for r in result["turn_ranges"]:
             if r["start"] == r["end"]:
                 merge_preview_lines.append(f"Turn {r['start']} | {r['count']}장")
             else:
@@ -524,76 +575,64 @@ class MainWindow(QMainWindow):
         preview_text = (
             f"작품명\n{target_project_name}\n────────────\n"
             f"선택 이미지\n{len(files)}장\n정상 파일\n{len(valid_files)}장\n────────────\n"
-            f"예상 Turn\n{len(turns)}개\n────────────\n"
+            f"예상 Turn\n{len(result['turns'])}개\n────────────\n"
             f"예상 병합 결과\n{merge_preview_str}\n"
         )
-        if invalid_files:
-            preview_text += f"────────────\n인식 불가 파일\n" + "\n".join(invalid_files)
+        if result["invalid_files"]:
+            preview_text += f"────────────\n인식 불가 파일\n" + "\n".join(result["invalid_files"])
 
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("가져오기 확인")
-        msg_box.setText(preview_text)
-        btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
-        btn_import = msg_box.addButton("가져오기", QMessageBox.AcceptRole)
-        msg_box.exec()
-        
-        if msg_box.clickedButton() == btn_cancel:
-            return None
-        return valid_files
-
+        if self.show_confirm("가져오기 확인", preview_text):
+            return valid_files
+        return None
 
     def create_new_project(self):
         if not self.current_folder:
-            QMessageBox.warning(self, "경고", "먼저 '📂 폴더 열기'를 통해 저장소 폴더를 선택해주세요.")
+            self.show_warning("경고", "먼저 '📂 폴더 열기'를 통해 저장소 폴더를 선택해주세요.")
             return
 
         name, ok = QInputDialog.getText(self, "새 작품 생성", "작품명을 입력하세요:")
         if not ok: return
         name = name.strip()
         if not name:
-            QMessageBox.warning(self, "경고", "작품명이 비어있습니다.")
+            self.show_warning("경고", "작품명이 비어있습니다.")
             return
         if project_manager.project_exists(self.current_folder, name):
-            QMessageBox.warning(self, "경고", f"'{name}'(은)는 이미 존재하는 작품명입니다.")
+            self.show_warning("경고", f"'{name}'(은)는 이미 존재하는 작품명입니다.")
             return
 
         valid_files = self._process_import_dialog(name)
-        if not valid_files:
-            return
+        if not valid_files: return
             
         project_path = project_manager.create_project(self.current_folder, name)
         project_manager.copy_images(project_path, valid_files)
         
         self.reload_project_list(select_name=name)
-        self.status_bar.showMessage(f"'{name}' 프로젝트를 생성했습니다.")
+        self.update_status(f"'{name}' 프로젝트를 생성했습니다.")
 
     def add_images_to_project(self):
-        if not self._check_project_selected():
-            return
-            
         valid_files = self._process_import_dialog(self.current_project)
-        if not valid_files:
-            return
+        if not valid_files: return
             
         project_path = os.path.join(self.current_folder, self.current_project)
         project_manager.copy_images(project_path, valid_files)
         
         self.refresh_project()
-        self.status_bar.showMessage(f"'{self.current_project}'에 이미지를 추가했습니다.")
+        self.update_status(f"'{self.current_project}'에 이미지를 추가했습니다.")
 
     def filter_turns(self, text):
         for i in range(self.turn_list.count()):
             item = self.turn_list.item(i)
-            if text in item.text(): item.setHidden(False)
-            else: item.setHidden(True)
+            item.setHidden(text not in item.text())
 
     def on_project_changed(self, current, previous):
         if not current or not self.current_folder:
-            self.project_menu_btn.setEnabled(False)
+            self.current_project = None
+            self.update_action_states()
             return
             
-        self.project_menu_btn.setEnabled(True)
         self.current_project = current.text()
+        self.update_action_states()
+        
         self.turn_search_input.blockSignals(True)
         self.turn_search_input.clear()
         self.turn_search_input.blockSignals(False)
@@ -614,11 +653,10 @@ class MainWindow(QMainWindow):
             self.reload_project_list(select_name=self.current_project)
         if self.current_project:
             self.refresh_project()
-            self.status_bar.showMessage(f"새로고침 완료: '{self.current_project}' - {len(self.image_cards)}개의 Turn을 불러왔습니다.")
+            self.update_status(f"새로고침 완료: '{self.current_project}' - {len(self.image_cards)}개의 Turn을 불러왔습니다.")
 
     def refresh_project(self):
         if not self.current_folder or not self.current_project:
-            self.status_bar.showMessage("먼저 작품을 선택하세요.")
             return
             
         current_turn_item = self.turn_list.currentItem()
@@ -636,7 +674,6 @@ class MainWindow(QMainWindow):
         
         images = image_loader.load_images(project_path)
         merged_data_list = image_merger.merge_images(project_path, images)
-        
         self.display_images(merged_data_list, self.current_project)
         
         if selected_turn_text:
@@ -645,15 +682,23 @@ class MainWindow(QMainWindow):
                 self.turn_list.setCurrentItem(items[0])
 
     def display_images(self, merged_data_list, project_name):
-        self.clear_image_cards()
+        for card in self.image_cards:
+            self.scroll_layout.removeWidget(card)
+            card.deleteLater()
+            
+        self.image_cards.clear()
+        self.turn_map.clear()
+        
+        self.turn_list.blockSignals(True)
+        self.turn_list.clear()
 
         if not merged_data_list:
-            self.status_bar.showMessage(f"'{project_name}'에 표시할 이미지가 없습니다.")
+            self.viewer_label.show()
+            self.turn_list.blockSignals(False)
             return
             
         self.viewer_label.hide()
         available_width = self.get_available_width()
-        self.turn_list.blockSignals(True)
         
         for data in merged_data_list:
             pil_img = data["image"]
@@ -673,8 +718,6 @@ class MainWindow(QMainWindow):
         current_filter = self.turn_search_input.text()
         if current_filter:
             self.filter_turns(current_filter)
-            
-        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 Turn을 불러왔습니다.")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -683,7 +726,6 @@ class MainWindow(QMainWindow):
             for card in self.image_cards:
                 card.set_display_width(available_width)
 
-
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -691,8 +733,6 @@ if __name__ == "__main__":
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
-    else:
-        print(f"[경고] 테마 파일을 찾을 수 없습니다: {qss_path}")
 
     window = MainWindow()
     window.show()
