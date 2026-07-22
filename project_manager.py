@@ -203,7 +203,7 @@ def set_cover_image(base_folder, source_path):
     delete_cover_image(base_folder)
     
     ext = os.path.splitext(source_path)[1].lower()
-    if ext not in ['.png', '.jpg', '.jpeg']: ext = '.png'
+    if ext not in ['.png', '.jpg', '.jpeg', '.webp']: ext = '.png'
     dest = os.path.join(base_folder, f"cover{ext}")
     try:
         shutil.copy2(source_path, dest)
@@ -214,7 +214,7 @@ def delete_cover_image(base_folder):
     """저장소 루트의 커버 이미지를 삭제합니다."""
     if not base_folder: return False
     deleted = False
-    for ext in ['.png', '.jpg', '.jpeg']:
+    for ext in ['.png', '.jpg', '.jpeg', '.webp']:
         p = os.path.join(base_folder, f"cover{ext}")
         if os.path.exists(p):
             os.remove(p)

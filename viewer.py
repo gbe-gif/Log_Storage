@@ -134,7 +134,7 @@ class SettingsDialog(QDialog):
         if not self.config.get("storage_root"):
             self.parent.show_warning("경고", "기본 저장소가 먼저 설정되어야 합니다.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg, *.webp)")
+        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg, *.webp);;All Files (*)")
         if path:
             if project_manager.set_cover_image(self.config["storage_root"], path):
                 self.parent.update_status("저장소 커버가 변경되었습니다.")
