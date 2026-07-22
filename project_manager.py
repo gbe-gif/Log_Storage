@@ -106,13 +106,15 @@ def get_project_summary(project_path):
     }
 
 # ==========================================
-# v1.6 추가: 프로젝트 관리 기능
+# 공통 반환 구조를 준수하는 OS 호출 로직
 # ==========================================
-
 def open_project_folder(project_path):
-    """운영체제의 기본 파일 탐색기로 프로젝트 폴더를 엽니다."""
+    """
+    운영체제의 기본 파일 탐색기로 프로젝트 폴더를 엽니다.
+    반환: 성공 여부 (bool)
+    """
     if not os.path.exists(project_path):
-        return
+        return False
         
     system = platform.system()
     try:
@@ -122,11 +124,16 @@ def open_project_folder(project_path):
             subprocess.call(["open", project_path])
         else:
             subprocess.call(["xdg-open", project_path])
+        return True
     except Exception as e:
         print(f"[오류] 폴더 열기 실패 ({project_path}): {e}")
+        return False
 
 def rename_project(base_folder, old_name, new_name):
-    """프로젝트 폴더의 이름을 변경합니다."""
+    """
+    프로젝트 폴더의 이름을 변경합니다.
+    반환: 성공 여부 (bool)
+    """
     old_path = os.path.join(base_folder, old_name)
     new_path = os.path.join(base_folder, new_name)
     
@@ -140,7 +147,10 @@ def rename_project(base_folder, old_name, new_name):
     return False
 
 def delete_project(project_path):
-    """프로젝트 폴더와 그 안의 모든 데이터를 삭제합니다."""
+    """
+    프로젝트 폴더와 그 안의 모든 데이터를 삭제합니다.
+    반환: 성공 여부 (bool)
+    """
     if os.path.exists(project_path):
         try:
             shutil.rmtree(project_path)

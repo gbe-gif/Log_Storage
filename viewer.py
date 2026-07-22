@@ -3,7 +3,8 @@ import os
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QStatusBar, QSplitter,
     QListWidget, QScrollArea, QLabel, QVBoxLayout, QWidget, QFrame,
-    QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu
+    QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
+    QLineEdit
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -62,9 +63,7 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(8)
 
-        # ==========================================
-        # v1.6 변경: 작품 목록 헤더 & 더보기 메뉴
-        # ==========================================
+        # -- 작품 목록 헤더 & 더보기 메뉴 --
         header_layout = QHBoxLayout()
         title_label = QLabel("작품 목록")
         font = title_label.font()
@@ -74,6 +73,7 @@ class MainWindow(QMainWindow):
         self.project_menu_btn = QToolButton()
         self.project_menu_btn.setText("⋮")
         self.project_menu_btn.setPopupMode(QToolButton.InstantPopup)
+        self.project_menu_btn.setEnabled(False)  # 초기 상태는 비활성화
         
         project_menu = QMenu(self)
         action_open_folder = QAction("📂 프로젝트 폴더 열기", self)
@@ -107,18 +107,23 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(line)
         left_layout.addWidget(self.project_list)
 
-        # -- Turn 목록 UI --
+        # -- Turn 목록 UI & v1.7 검색창 --
         turn_title_label = QLabel("Turn 목록")
         turn_title_label.setFont(font)
         turn_line = QFrame()
         turn_line.setFrameShape(QFrame.HLine)
         turn_line.setFrameShadow(QFrame.Sunken)
         turn_line.setObjectName("SeparatorLine")
+        
+        self.turn_search_input = QLineEdit()
+        self.turn_search_input.setPlaceholderText("🔍 Turn 검색...")
+        self.turn_search_input.textChanged.connect(self.filter_turns)
 
         self.turn_list = QListWidget()
         self.turn_list.currentItemChanged.connect(self.on_turn_changed)
 
         left_layout.addWidget(turn_title_label)
+        left_layout.addWidget(self.turn_search_input) # 검색창 배치
         left_layout.addWidget(turn_line)
         left_layout.addWidget(self.turn_list)
 
@@ -174,6 +179,10 @@ class MainWindow(QMainWindow):
         self.turn_list.clear()
         self.turn_list.blockSignals(False)
         
+        self.turn_search_input.blockSignals(True)
+        self.turn_search_input.clear()
+        self.turn_search_input.blockSignals(False)
+        
         self.viewer_label.show()
         self.info_label.setText("프로젝트 정보가 없습니다.")
 
@@ -199,6 +208,7 @@ class MainWindow(QMainWindow):
         if folder_path:
             self.current_folder = folder_path
             self.current_project = None
+            self.project_menu_btn.setEnabled(False)
             self.clear_image_cards()
             
             self.reload_project_list()
@@ -211,11 +221,9 @@ class MainWindow(QMainWindow):
 
 
     # ==========================================
-    # v1.6 추가: 프로젝트 관리 이벤트 핸들러
+    # v1.7 개선: 프로젝트 관리 (반환값 검사)
     # ==========================================
-
     def _check_project_selected(self):
-        """메뉴 동작 전 프로젝트가 정상 선택되었는지 확인하는 헬퍼 메서드"""
         if not self.current_folder or not self.current_project:
             QMessageBox.information(self, "안내", "먼저 관리할 작품(프로젝트)을 선택해주세요.")
             return False
@@ -226,7 +234,9 @@ class MainWindow(QMainWindow):
             return
             
         project_path = os.path.join(self.current_folder, self.current_project)
-        project_manager.open_project_folder(project_path)
+        success = project_manager.open_project_folder(project_path)
+        if not success:
+            QMessageBox.warning(self, "오류", "프로젝트 폴더를 열 수 없습니다.")
 
 
     def rename_current_project(self):
@@ -236,7 +246,6 @@ class MainWindow(QMainWindow):
         new_name, ok = QInputDialog.getText(
             self, "프로젝트 이름 변경", "새 이름을 입력하세요:", text=self.current_project
         )
-        
         if not ok:
             return
             
@@ -254,6 +263,7 @@ class MainWindow(QMainWindow):
             
         success = project_manager.rename_project(self.current_folder, self.current_project, new_name)
         if success:
+            # v1.7: 변경 후 자동 선택 유지
             self.reload_project_list(select_name=new_name)
             self.status_bar.showMessage(f"프로젝트 이름이 '{new_name}'(으)로 변경되었습니다.")
         else:
@@ -284,7 +294,6 @@ class MainWindow(QMainWindow):
         
         btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
         btn_delete = msg_box.addButton("삭제", QMessageBox.AcceptRole)
-        
         msg_box.exec()
         
         if msg_box.clickedButton() == btn_cancel:
@@ -293,6 +302,7 @@ class MainWindow(QMainWindow):
         success = project_manager.delete_project(project_path)
         if success:
             self.current_project = None
+            self.project_menu_btn.setEnabled(False)
             self.clear_image_cards()
             self.reload_project_list()
             self.status_bar.showMessage("프로젝트가 성공적으로 삭제되었습니다.")
@@ -303,7 +313,6 @@ class MainWindow(QMainWindow):
     # ==========================================
     # 공통 가져오기 함수 & 기본 이벤트
     # ==========================================
-
     def _process_import_dialog(self, target_project_name):
         files, _ = QFileDialog.getOpenFileNames(
             self, "이미지 선택", "", "PNG Images (*.png *.PNG)"
@@ -353,7 +362,6 @@ class MainWindow(QMainWindow):
         
         btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
         btn_import = msg_box.addButton("가져오기", QMessageBox.AcceptRole)
-        
         msg_box.exec()
         
         if msg_box.clickedButton() == btn_cancel:
@@ -370,12 +378,10 @@ class MainWindow(QMainWindow):
         name, ok = QInputDialog.getText(self, "새 작품 생성", "작품명을 입력하세요:")
         if not ok:
             return
-            
         name = name.strip()
         if not name:
             QMessageBox.warning(self, "경고", "작품명이 비어있습니다.")
             return
-
         if project_manager.project_exists(self.current_folder, name):
             QMessageBox.warning(self, "경고", f"'{name}'(은)는 이미 존재하는 작품명입니다.")
             return
@@ -392,8 +398,7 @@ class MainWindow(QMainWindow):
 
 
     def add_images_to_project(self):
-        if not self.current_folder or not self.current_project:
-            QMessageBox.warning(self, "경고", "먼저 이미지를 추가할 작품을 선택해주세요.")
+        if not self._check_project_selected():
             return
             
         valid_files = self._process_import_dialog(self.current_project)
@@ -407,11 +412,33 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"'{self.current_project}'에 이미지를 추가했습니다.")
 
 
+    # ==========================================
+    # v1.7 개선: Turn 검색 및 상태 유지 로직
+    # ==========================================
+    def filter_turns(self, text):
+        """입력된 텍스트(숫자)를 기준으로 Turn 목록을 필터링합니다."""
+        for i in range(self.turn_list.count()):
+            item = self.turn_list.item(i)
+            # 입력된 텍스트가 항목의 텍스트(예: "Turn 12")에 포함되는지 확인
+            if text in item.text():
+                item.setHidden(False)
+            else:
+                item.setHidden(True)
+
+
     def on_project_changed(self, current, previous):
         if not current or not self.current_folder:
+            self.project_menu_btn.setEnabled(False)
             return
             
+        self.project_menu_btn.setEnabled(True)
         self.current_project = current.text()
+        
+        # 프로젝트 변경 시 검색창 초기화
+        self.turn_search_input.blockSignals(True)
+        self.turn_search_input.clear()
+        self.turn_search_input.blockSignals(False)
+        
         self.refresh_project()
 
 
@@ -430,8 +457,12 @@ class MainWindow(QMainWindow):
 
 
     def on_action_refresh(self):
-        self.refresh_project()
-        if self.current_folder and self.current_project:
+        # 툴바 새로고침 클릭 시 프로젝트 리스트 갱신 및 기존 선택 상태 유지
+        if self.current_folder:
+            self.reload_project_list(select_name=self.current_project)
+            
+        if self.current_project:
+            self.refresh_project()
             self.status_bar.showMessage(f"새로고침 완료: '{self.current_project}' - {len(self.image_cards)}개의 Turn을 불러왔습니다.")
 
 
@@ -440,6 +471,10 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("먼저 작품을 선택하세요.")
             return
             
+        # v1.7: 새로고침 전 선택된 Turn 아이템 저장 (이미지 추가 등의 작업 후 상태 유지)
+        current_turn_item = self.turn_list.currentItem()
+        selected_turn_text = current_turn_item.text() if current_turn_item else None
+        
         project_path = os.path.join(self.current_folder, self.current_project)
         
         info = project_manager.get_project_summary(project_path)
@@ -456,6 +491,12 @@ class MainWindow(QMainWindow):
         merged_data_list = image_merger.merge_images(project_path, images)
         
         self.display_images(merged_data_list, self.current_project)
+        
+        # v1.7: 갱신된 리스트에서 기존에 선택되어 있던 Turn을 찾아 다시 선택
+        if selected_turn_text:
+            items = self.turn_list.findItems(selected_turn_text, Qt.MatchExactly)
+            if items:
+                self.turn_list.setCurrentItem(items[0])
 
 
     def display_images(self, merged_data_list, project_name):
@@ -491,6 +532,12 @@ class MainWindow(QMainWindow):
             self.turn_list.addItem(f"Turn {turn_num}")
             
         self.turn_list.blockSignals(False)
+        
+        # 만약 필터(검색창)에 텍스트가 남아 있다면 적용
+        current_filter = self.turn_search_input.text()
+        if current_filter:
+            self.filter_turns(current_filter)
+            
         self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 Turn을 불러왔습니다.")
 
 
