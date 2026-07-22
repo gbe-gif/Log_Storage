@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QStatusBar, QSplitter,
     QListWidget, QScrollArea, QLabel, QVBoxLayout, QWidget, QFrame,
     QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
-    QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem, QComboBox, QCheckBox, QTextBrowser
+    QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem, QComboBox, QCheckBox, QTextBrowser, QSizePolicy
 )
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QIcon, QImage, QPixmap
@@ -21,13 +21,13 @@ import config_manager
 # ==========================================
 # 프로그램 상수 정의
 # ==========================================
-APP_VERSION = "2.1.1"
+APP_VERSION = "2.1.3"
 APP_BUILD = "2026.07.23"
 APP_DEVELOPER = "게으른굼벵이"
 
 
 # ==========================================
-# 도움말 다이얼로그 (v2.1.1 추가)
+# 도움말 다이얼로그 (v2.1.3 업데이트)
 # ==========================================
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
@@ -49,13 +49,14 @@ class HelpDialog(QDialog):
         <h3 style='color:#4DAAFA;'>📥 이미지 추가 방법</h3>
         <ul style='color:#D4D4D4;'>
             <li>작품을 선택한 후 상단의 <b>[이미지 추가]</b> 버튼을 누르세요.</li>
-            <li>올바른 형식의 PNG 파일만 자동으로 인식되어 병합됩니다.</li>
+            <li><b>지원 형식:</b> PNG / JPG / JPEG / WEBP / BMP / GIF</li>
+            <li>파일명 규칙만 맞으면 확장자와 관계없이 가져올 수 있습니다.</li>
         </ul>
         
         <h3 style='color:#4DAAFA;'>📝 이미지 파일명 규칙</h3>
         <ul style='color:#D4D4D4;'>
-            <li>반드시 <b>Turn_순번.png</b> 형식이어야 합니다.</li>
-            <li>예) <code>1_1.png</code>, <code>1_2.png</code>, <code>15_3.png</code></li>
+            <li>반드시 <b>Turn_순번.확장자</b> 형식이어야 합니다.</li>
+            <li>예) <code>1_1.png</code>, <code>1_2.webp</code>, <code>2_1.jpg</code></li>
             <li>규칙에 맞지 않는 파일은 가져오기 과정에서 안전하게 제외됩니다.</li>
         </ul>
         
@@ -80,8 +81,10 @@ class HelpDialog(QDialog):
         <h3 style='color:#4DAAFA;'>🖼️ 저장소 커버</h3>
         <ul style='color:#D4D4D4;'>
             <li><b>[⚙ 설정]</b>에서 저장소의 대표 커버 이미지를 등록할 수 있습니다.</li>
-            <li>권장 비율은 <b>3:1</b> (예: 1200x400)이며, 비율에 맞게 자동으로 잘림 없이 표시됩니다.</li>
-            <li>[▼ Cover] 버튼을 눌러 커버를 숨기거나 펼칠 수 있으며, 이 상태 역시 자동 저장됩니다.</li>
+            <li>권장 이미지 비율은 <b>3:1</b>입니다.</li>
+            <li>Cover와 로그 영역 사이의 <b>경계선을 드래그</b>하여 커버 높이를 자유롭게 조절할 수 있습니다.</li>
+            <li>조절한 높이는 <b>자동으로 저장</b>됩니다.</li>
+            <li>[▼ Cover] 버튼으로 <b>접기/펼치기</b>가 가능합니다.</li>
         </ul>
         """
         browser.setHtml(html_content)
@@ -107,7 +110,6 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(15, 15, 15, 15)
         
-        # 1. 프로그램 정보
         info_group = QGroupBox("프로그램 정보")
         info_layout = QVBoxLayout(info_group)
         info_layout.addWidget(QLabel("<b style='font-size:16px;'>Log Storage</b>"))
@@ -117,7 +119,6 @@ class SettingsDialog(QDialog):
         info_layout.addWidget(QLabel(f"Build : {APP_BUILD}"))
         layout.addWidget(info_group)
         
-        # 2. 기본 저장소
         storage_group = QGroupBox("기본 저장소")
         storage_layout = QVBoxLayout(storage_group)
         self.storage_label = QLabel(self.config.get("storage_root", "지정되지 않음"))
@@ -132,7 +133,6 @@ class SettingsDialog(QDialog):
         storage_layout.addLayout(btn_layout1)
         layout.addWidget(storage_group)
         
-        # 3. 저장소 커버
         cover_group = QGroupBox("저장소 커버")
         cover_layout = QVBoxLayout(cover_group)
         
@@ -162,7 +162,6 @@ class SettingsDialog(QDialog):
         cover_layout.addWidget(hint_label)
         layout.addWidget(cover_group)
         
-        # 4. RP Preview Studio
         rp_group = QGroupBox("RP Preview Studio")
         rp_layout = QVBoxLayout(rp_group)
         self.rp_label = QLabel(self.config.get("rp_preview_studio_path", "등록된 경로가 없습니다."))
@@ -177,7 +176,6 @@ class SettingsDialog(QDialog):
         rp_layout.addLayout(btn_layout2)
         layout.addWidget(rp_group)
         
-        # 5. 프로젝트 정렬
         sort_group = QGroupBox("프로젝트 정렬")
         sort_layout = QVBoxLayout(sort_group)
         self.sort_combo = QComboBox()
@@ -226,7 +224,7 @@ class SettingsDialog(QDialog):
         if not self.config.get("storage_root"):
             self.parent.show_warning("경고", "기본 저장소가 먼저 설정되어야 합니다.")
             return
-        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        path, _ = QFileDialog.getOpenFileName(self, "커버 이미지 선택", "", "Images (*.png *.jpg *.jpeg *.webp *.bmp *.gif)")
         if path:
             if project_manager.set_cover_image(self.config["storage_root"], path):
                 self.parent.update_status("저장소 커버가 변경되었습니다.")
@@ -260,6 +258,7 @@ class SettingsDialog(QDialog):
         config_manager.save_config(self.config)
         if self.parent.current_folder:
             self.parent.reload_project_list(select_name=self.parent.current_project)
+
 
 # ==========================================
 # 휴지통 다이얼로그
@@ -383,7 +382,6 @@ class MainWindow(QMainWindow):
         self.image_cards = []
         self.turn_map = {}
         
-        # Cover 펼침 상태 유지
         self.is_cover_expanded = self.config.get("cover_expanded", self.config.get("cover_expand_on_startup", False))
         
         self._setup_ui()
@@ -422,7 +420,6 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        # v2.1.1: 폴더 열기 제거
         self.action_new = QAction("📁 새 작품", self)
         self.action_add = QAction("📥 이미지 추가", self)
         self.action_refresh = QAction("🔄 새로고침", self)
@@ -480,7 +477,6 @@ class MainWindow(QMainWindow):
         self.project_menu_btn.setText("⋮")
         self.project_menu_btn.setPopupMode(QToolButton.InstantPopup)
         
-        # 프로젝트 메뉴 액션 구성
         project_menu = QMenu(self)
         action_toggle_fav = QAction("⭐ 즐겨찾기 설정/해제", self)
         action_open_folder = QAction("📂 프로젝트 폴더 열기", self)
@@ -517,7 +513,6 @@ class MainWindow(QMainWindow):
 
         self.project_list = QListWidget()
         self.project_list.currentItemChanged.connect(self.on_project_changed)
-        
         self.project_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.project_list.customContextMenuRequested.connect(self.show_project_context_menu)
 
@@ -566,6 +561,8 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
         
+        self.right_splitter = QSplitter(Qt.Vertical)
+        
         self.cover_widget = QWidget()
         self.cover_widget.setStyleSheet("background-color: #1E1E1E;")
         cover_layout = QVBoxLayout(self.cover_widget)
@@ -579,13 +576,13 @@ class MainWindow(QMainWindow):
         
         self.cover_image_label = QLabel()
         self.cover_image_label.setAlignment(Qt.AlignCenter)
-        
-        # v2.1.1: 커버 이미지 높이 고정을 해제하여 비율에 맞게 렌더링되도록 변경
+        self.cover_image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+        self.cover_image_label.setMinimumHeight(30)
         
         cover_layout.addWidget(self.btn_cover_toggle)
         cover_layout.addWidget(self.cover_image_label)
         
-        right_layout.addWidget(self.cover_widget)
+        self.right_splitter.addWidget(self.cover_widget)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -599,7 +596,12 @@ class MainWindow(QMainWindow):
         self.scroll_layout.addStretch()
         self.scroll_area.setWidget(self.scroll_widget)
         
-        right_layout.addWidget(self.scroll_area)
+        self.right_splitter.addWidget(self.scroll_area)
+        
+        self.right_splitter.setCollapsible(0, False)
+        self.right_splitter.setCollapsible(1, False)
+        
+        right_layout.addWidget(self.right_splitter)
 
         self.splitter.addWidget(left_panel)
         self.splitter.addWidget(right_panel)
@@ -607,6 +609,10 @@ class MainWindow(QMainWindow):
         saved_sizes = self.config.get("splitter_sizes", [220, 980])
         self.splitter.setSizes(saved_sizes)
         self.splitter.splitterMoved.connect(self.on_splitter_moved)
+        
+        saved_v_sizes = self.config.get("cover_splitter_sizes", [200, 800])
+        self.right_splitter.setSizes(saved_v_sizes)
+        self.right_splitter.splitterMoved.connect(self.on_cover_splitter_moved)
 
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -619,6 +625,14 @@ class MainWindow(QMainWindow):
     def on_splitter_moved(self, pos, index):
         self.config["splitter_sizes"] = self.splitter.sizes()
         config_manager.save_config(self.config)
+
+    def on_cover_splitter_moved(self, pos, index):
+        if self.is_cover_expanded:
+            self.config["cover_splitter_sizes"] = self.right_splitter.sizes()
+            config_manager.save_config(self.config)
+            cover_path = project_manager.get_cover_path(self.current_folder)
+            if cover_path:
+                self._render_cover(cover_path)
 
     def get_available_width(self):
         return self.scroll_area.viewport().width() - 40
@@ -679,26 +693,22 @@ class MainWindow(QMainWindow):
         if self.is_cover_expanded:
             self.btn_cover_toggle.setText("▼ Cover")
             self.cover_image_label.show()
-            self._render_cover(cover_path)
+            saved_v_sizes = self.config.get("cover_splitter_sizes", [200, 800])
+            self.right_splitter.setSizes(saved_v_sizes)
+            QTimer.singleShot(10, lambda: self._render_cover(cover_path))
         else:
             self.btn_cover_toggle.setText("▶ Cover")
             self.cover_image_label.hide()
 
     def _render_cover(self, path):
-        # v2.1.1: 폭을 기준으로 항상 3:1 비율을 유지하며 잘림이나 상하 여백 없이 자연스럽게 출력되도록 개선
-        width = self.cover_widget.width()
-        if width < 10: return
-        
-        target_height = width // 3
+        width = self.cover_image_label.width()
+        height = self.cover_image_label.height()
+        if width < 10 or height < 10: return
         
         img = QImage(path)
         if not img.isNull():
-            # 대상을 박스 크기 안에 비율을 유지한 채 맞춤 (가로에 맞게 축소/확대됨)
-            scaled = img.scaled(width, target_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled = img.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.cover_image_label.setPixmap(QPixmap.fromImage(scaled))
-            
-            # 렌더링된 이미지의 실제 높이만큼만 라벨의 높이를 강제 고정하여 불필요한 위아래 여백을 제거
-            self.cover_image_label.setFixedHeight(scaled.height())
 
     def toggle_cover(self):
         self.is_cover_expanded = not self.is_cover_expanded
@@ -975,10 +985,13 @@ class MainWindow(QMainWindow):
 
 
     # ==========================================
-    # 이미지 불러오기 및 에러 메시지 고도화
+    # 이미지 불러오기 및 에러 메시지 (v2.1.3: 모든 이미지 형식 필터 적용)
     # ==========================================
     def _process_import_dialog(self, target_project_name):
-        files, _ = QFileDialog.getOpenFileNames(self, "이미지 선택", "", "PNG Images (*.png *.PNG)")
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "이미지 선택", "", 
+            "Image Files (*.png *.jpg *.jpeg *.webp *.bmp *.gif);;All Files (*)"
+        )
         if not files: return None
         
         result = project_manager.analyze_import_files(files)
@@ -1014,13 +1027,12 @@ class MainWindow(QMainWindow):
                 f"{invalid_list_str}\n\n"
                 f"────────────\n\n"
                 f"파일명 규칙\n\n"
-                f"Turn_순번.png\n\n"
+                f"Turn_순번.확장자\n\n"
                 f"예)\n\n"
                 f"1_1.png\n"
-                f"1_2.png\n"
-                f"2_1.png\n"
-                f"15_3.png\n\n"
-                f"숫자_숫자 형식의 PNG 파일만 가져올 수 있습니다.\n\n"
+                f"1_2.webp\n"
+                f"2_1.jpg\n\n"
+                f"숫자_숫자 형식의 이미지 파일만 가져올 수 있습니다.\n\n"
                 f"────────────\n\n"
                 f"파일명이 올바르지 않은 이미지는 가져오지 않습니다."
             )
@@ -1040,7 +1052,7 @@ class MainWindow(QMainWindow):
             self.show_warning("경고", "작품명이 비어있습니다.")
             return
         if project_manager.project_exists(self.current_folder, name):
-            self.show_warning("경고", f"'{name}'(은)는 이미 존재하는 작품명입니다.")
+            self.show_warning("경고", f"'{name}'(은)는 이미 존재하는 프로젝트명입니다.")
             return
         valid_files = self._process_import_dialog(name)
         if not valid_files: return
@@ -1179,12 +1191,10 @@ class MainWindow(QMainWindow):
             for card in self.image_cards:
                 card.set_display_width(available_width)
         
-        # 윈도우(우측 영역) 크기가 조절될 때마다 커버 3:1 비율을 다시 계산하여 렌더링
         if hasattr(self, 'cover_widget') and self.cover_widget.isVisible() and self.is_cover_expanded:
             cover_path = project_manager.get_cover_path(self.current_folder)
             if cover_path:
                 self._render_cover(cover_path)
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
