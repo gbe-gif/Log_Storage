@@ -10,7 +10,8 @@ from PySide6.QtGui import QAction
 
 import image_loader
 import image_merger
-import image_converter  # 새로 추가된 변환 모듈
+import image_converter
+import image_card
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -21,7 +22,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
 
         self.current_folder = None
-        self.image_labels = []
+        self.image_cards = []
         
         self._setup_ui()
 
@@ -120,31 +121,20 @@ class MainWindow(QMainWindow):
             return
             
         project_name = current.text()
-        
-        # 1. 프로젝트 경로 생성
         project_path = os.path.join(self.current_folder, project_name)
         
-        # 2. 이미지 목록 로드
         images = image_loader.load_images(project_path)
-        
-        # 3. 이미지 병합
         merged_data_list = image_merger.merge_images(project_path, images)
         
-        # 4. 이미지 출력 로직 호출
         self.display_images(merged_data_list, project_name)
 
 
     def display_images(self, merged_data_list, project_name):
-        """
-        병합된 이미지 데이터를 UI(ScrollArea)에 출력합니다.
-        """
-        # 기존 라벨 모두 제거
-        for lbl in self.image_labels:
-            self.scroll_layout.removeWidget(lbl)
-            lbl.deleteLater()
-        self.image_labels.clear()
+        for card in self.image_cards:
+            self.scroll_layout.removeWidget(card)
+            card.deleteLater()
+        self.image_cards.clear()
 
-        # 이미지가 없을 경우 처리
         if not merged_data_list:
             self.viewer_label.show()
             self.status_bar.showMessage(f"'{project_name}'에 표시할 이미지가 없습니다.")
@@ -154,28 +144,32 @@ class MainWindow(QMainWindow):
         
         available_width = self.scroll_area.viewport().width() - 40
         
-        # 변환 모듈을 이용한 Pixmap 출력
         for data in merged_data_list:
             pil_img = data["image"]
-            
-            # image_converter를 통해 변환
             pixmap = image_converter.pil_to_pixmap(pil_img)
             
-            # 가로 폭에 맞게 축소
-            if pixmap.width() > available_width:
-                pixmap = pixmap.scaledToWidth(available_width, Qt.SmoothTransformation)
-                
-            lbl = QLabel()
-            lbl.setPixmap(pixmap)
-            lbl.setAlignment(Qt.AlignCenter)
+            # v1.1 변경: 원본 픽스맵을 넘기고, ImageCard 내부에서 사이즈 조절
+            card = image_card.ImageCard(data["turn"], data["files"], pixmap)
+            card.set_display_width(available_width)
             
-            # Stretch 앞에 삽입
             insert_index = self.scroll_layout.count() - 1
-            self.scroll_layout.insertWidget(insert_index, lbl)
+            self.scroll_layout.insertWidget(insert_index, card)
             
-            self.image_labels.append(lbl)
+            self.image_cards.append(card)
             
-        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 이미지 턴을 불러왔습니다.")
+        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 턴(카드)을 불러왔습니다.")
+
+    # ==========================================
+    # v1.1 추가: 창 크기 변경 시 자동 리사이징 적용
+    # ==========================================
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        
+        # UI가 완전히 초기화되어 scroll_area가 존재하고, 표시 중인 카드가 있을 때만 실행
+        if hasattr(self, 'scroll_area') and self.image_cards:
+            available_width = self.scroll_area.viewport().width() - 40
+            for card in self.image_cards:
+                card.set_display_width(available_width)
 
 
 if __name__ == "__main__":
