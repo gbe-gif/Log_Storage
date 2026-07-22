@@ -37,15 +37,19 @@ class MainWindow(QMainWindow):
 
         action_open = QAction("📂 폴더 열기", self)
         action_new = QAction("📁 새 작품", self)
+        # v1.5 추가: 이미지 추가 버튼
+        action_add = QAction("📥 이미지 추가", self)
         action_refresh = QAction("🔄 새로고침", self)
         action_settings = QAction("⚙ 설정", self)
 
         action_open.triggered.connect(self.open_folder)
         action_new.triggered.connect(self.create_new_project)
+        action_add.triggered.connect(self.add_images_to_project)
         action_refresh.triggered.connect(self.on_action_refresh)
 
         toolbar.addAction(action_open)
         toolbar.addAction(action_new)
+        toolbar.addAction(action_add)
         toolbar.addAction(action_refresh)
         toolbar.addAction(action_settings)
 
@@ -53,7 +57,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(splitter)
 
-        # 2-1. 좌측 패널 (작품 목록 & Turn 목록)
+        # 2-1. 좌측 패널
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(10, 10, 10, 10)
@@ -79,10 +83,7 @@ class MainWindow(QMainWindow):
 
         # -- Turn 목록 UI --
         turn_title_label = QLabel("Turn 목록")
-        turn_font = turn_title_label.font()
-        turn_font.setBold(True)
-        turn_title_label.setFont(turn_font)
-
+        turn_title_label.setFont(font)
         turn_line = QFrame()
         turn_line.setFrameShape(QFrame.HLine)
         turn_line.setFrameShadow(QFrame.Sunken)
@@ -94,6 +95,18 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(turn_title_label)
         left_layout.addWidget(turn_line)
         left_layout.addWidget(self.turn_list)
+
+        # -- v1.5 추가: 프로젝트 요약 정보 UI --
+        info_line = QFrame()
+        info_line.setFrameShape(QFrame.HLine)
+        info_line.setFrameShadow(QFrame.Sunken)
+        info_line.setObjectName("SeparatorLine")
+        
+        self.info_label = QLabel("프로젝트 정보가 없습니다.")
+        self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        
+        left_layout.addWidget(info_line)
+        left_layout.addWidget(self.info_label)
 
         # 2-2. 우측 패널 (이미지 뷰어)
         self.scroll_area = QScrollArea()
@@ -114,7 +127,6 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.scroll_area)
         splitter.setSizes([220, 980])
 
-        # 3. 상태바 (Status Bar)
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("준비 완료")
@@ -137,6 +149,7 @@ class MainWindow(QMainWindow):
         self.turn_list.blockSignals(False)
         
         self.viewer_label.show()
+        self.info_label.setText("프로젝트 정보가 없습니다.")
 
 
     def reload_project_list(self, select_name=None):
@@ -157,7 +170,6 @@ class MainWindow(QMainWindow):
 
     def open_folder(self):
         folder_path = QFileDialog.getExistingDirectory(self, "저장소 폴더 선택", "")
-        
         if folder_path:
             self.current_folder = folder_path
             self.current_project = None
@@ -173,7 +185,72 @@ class MainWindow(QMainWindow):
 
 
     # ==========================================
-    # v1.4.2 개선: 분석 모듈 연동 및 미리보기/예외처리 고도화
+    # v1.5 공통 함수: 이미지 가져오기 미리보기 및 검증 로직
+    # ==========================================
+    def _process_import_dialog(self, target_project_name):
+        """
+        파일 다이얼로그를 띄워 이미지를 선택받고, 검증 후 미리보기 창을 표시합니다.
+        사용자가 승인하면 복사 대상인 유효한 파일 경로 리스트를 반환합니다.
+        """
+        files, _ = QFileDialog.getOpenFileNames(
+            self, "이미지 선택", "", "PNG Images (*.png *.PNG)"
+        )
+        if not files:
+            return None
+
+        result = project_manager.analyze_import_files(files)
+        valid_files = result["valid_files"]
+        invalid_files = result["invalid_files"]
+        turns = result["turns"]
+        turn_ranges = result["turn_ranges"]
+
+        if not valid_files:
+            QMessageBox.warning(self, "경고", "가져올 수 있는 정상적인 이미지 파일이 없습니다.")
+            return None
+
+        merge_preview_lines = []
+        for r in turn_ranges:
+            if r["start"] == r["end"]:
+                merge_preview_lines.append(f"Turn {r['start']} | {r['count']}장")
+            else:
+                merge_preview_lines.append(f"Turn {r['start']} ~ Turn {r['end']} | {r['count']}장")
+        
+        merge_preview_str = "\n".join(merge_preview_lines) if merge_preview_lines else "없음"
+
+        preview_text = (
+            f"작품명\n{target_project_name}\n"
+            f"────────────\n"
+            f"선택 이미지\n{len(files)}장\n"
+            f"정상 파일\n{len(valid_files)}장\n"
+            f"────────────\n"
+            f"예상 Turn\n{len(turns)}개\n"
+            f"────────────\n"
+            f"예상 병합 결과\n{merge_preview_str}\n"
+        )
+        
+        if invalid_files:
+            preview_text += (
+                f"────────────\n"
+                f"인식 불가 파일\n" + "\n".join(invalid_files)
+            )
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("가져오기 확인")
+        msg_box.setText(preview_text)
+        
+        btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
+        btn_import = msg_box.addButton("가져오기", QMessageBox.AcceptRole)
+        
+        msg_box.exec()
+        
+        if msg_box.clickedButton() == btn_cancel:
+            return None
+            
+        return valid_files
+
+
+    # ==========================================
+    # v1.5 리팩토링: 새 작품 생성 (공통 함수 사용)
     # ==========================================
     def create_new_project(self):
         if not self.current_folder:
@@ -193,71 +270,40 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "경고", f"'{name}'(은)는 이미 존재하는 작품명입니다.")
             return
 
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "이미지 선택", "", "PNG Images (*.png *.PNG)"
-        )
-        if not files:
-            return
-
-        # 개선된 분석 로직 호출
-        result = project_manager.analyze_import_files(files)
-        valid_files = result["valid_files"]
-        invalid_files = result["invalid_files"]
-        turns = result["turns"]
-        turn_ranges = result["turn_ranges"]
-
-        # 정상 파일이 하나도 없는 경우 프로젝트 생성 중단
+        # 1. 공통 가져오기 프로세스 수행
+        valid_files = self._process_import_dialog(name)
         if not valid_files:
-            QMessageBox.warning(self, "경고", "가져올 수 있는 정상적인 이미지 파일(형식: 숫자_숫자.png)이 하나도 없습니다.")
-            return
-
-        # 연속 구간(Range)으로 압축된 예상 병합 결과 문구 조립
-        merge_preview_lines = []
-        for r in turn_ranges:
-            if r["start"] == r["end"]:
-                merge_preview_lines.append(f"Turn {r['start']} | {r['count']}장")
-            else:
-                merge_preview_lines.append(f"Turn {r['start']} ~ Turn {r['end']} | {r['count']}장")
-        
-        merge_preview_str = "\n".join(merge_preview_lines) if merge_preview_lines else "없음"
-
-        # 미리보기 텍스트 구성
-        preview_text = (
-            f"작품명\n{name}\n"
-            f"────────────\n"
-            f"선택 이미지\n{len(files)}장\n"
-            f"정상 파일\n{len(valid_files)}장\n"
-            f"────────────\n"
-            f"예상 Turn\n{len(turns)}개\n"
-            f"────────────\n"
-            f"예상 병합 결과\n{merge_preview_str}\n"
-        )
-        
-        # 인식 불가 파일 출력 (존재할 경우만)
-        if invalid_files:
-            preview_text += (
-                f"────────────\n"
-                f"인식 불가 파일\n" + "\n".join(invalid_files)
-            )
-
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("가져오기 확인")
-        msg_box.setText(preview_text)
-        
-        btn_cancel = msg_box.addButton("취소", QMessageBox.RejectRole)
-        btn_import = msg_box.addButton("가져오기", QMessageBox.AcceptRole)
-        
-        msg_box.exec()
-        
-        if msg_box.clickedButton() == btn_cancel:
             return
             
-        # 정상 파일만 복사 후 새로고침
+        # 2. 프로젝트 생성 및 이미지 복사
         project_path = project_manager.create_project(self.current_folder, name)
         project_manager.copy_images(project_path, valid_files)
         
+        # 3. 갱신 및 선택
         self.reload_project_list(select_name=name)
         self.status_bar.showMessage(f"'{name}' 프로젝트를 생성했습니다.")
+
+
+    # ==========================================
+    # v1.5 추가: 기존 프로젝트에 이미지 추가 (공통 함수 사용)
+    # ==========================================
+    def add_images_to_project(self):
+        if not self.current_folder or not self.current_project:
+            QMessageBox.warning(self, "경고", "먼저 이미지를 추가할 작품을 선택해주세요.")
+            return
+            
+        # 1. 공통 가져오기 프로세스 수행
+        valid_files = self._process_import_dialog(self.current_project)
+        if not valid_files:
+            return
+            
+        # 2. 기존 프로젝트에 이미지 복사
+        project_path = os.path.join(self.current_folder, self.current_project)
+        project_manager.copy_images(project_path, valid_files)
+        
+        # 3. 자동 새로고침 수행
+        self.refresh_project()
+        self.status_bar.showMessage(f"'{self.current_project}'에 이미지를 추가했습니다.")
 
 
     def on_project_changed(self, current, previous):
@@ -284,7 +330,6 @@ class MainWindow(QMainWindow):
 
     def on_action_refresh(self):
         self.refresh_project()
-        
         if self.current_folder and self.current_project:
             self.status_bar.showMessage(f"새로고침 완료: '{self.current_project}' - {len(self.image_cards)}개의 Turn을 불러왔습니다.")
 
@@ -296,6 +341,18 @@ class MainWindow(QMainWindow):
             
         project_path = os.path.join(self.current_folder, self.current_project)
         
+        # v1.5 추가: 프로젝트 요약 정보 갱신
+        info = project_manager.get_project_summary(project_path)
+        info_text = (
+            f"프로젝트\n{self.current_project}\n"
+            f"────────────\n"
+            f"Turn\n{info['turn_count']}\n"
+            f"이미지\n{info['image_count']}\n"
+            f"마지막 수정\n{info['last_modified']}"
+        )
+        self.info_label.setText(info_text)
+        
+        # 이미지 로딩 및 출력
         images = image_loader.load_images(project_path)
         merged_data_list = image_merger.merge_images(project_path, images)
         
@@ -335,7 +392,6 @@ class MainWindow(QMainWindow):
             self.turn_list.addItem(f"Turn {turn_num}")
             
         self.turn_list.blockSignals(False)
-            
         self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 Turn을 불러왔습니다.")
 
 
