@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
 
         self.current_folder = None
+        self.current_project = None  
         self.image_cards = []
         
         self._setup_ui()
@@ -37,6 +38,8 @@ class MainWindow(QMainWindow):
         action_settings = QAction("⚙ 설정", self)
 
         action_open.triggered.connect(self.open_folder)
+        # 새로고침 래퍼 메서드로 연결하여 UX 문구 처리 분리
+        action_refresh.triggered.connect(self.on_action_refresh)
 
         toolbar.addAction(action_open)
         toolbar.addAction(action_refresh)
@@ -94,11 +97,33 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("준비 완료")
 
 
+    def get_available_width(self):
+        """ScrollArea의 사용 가능한 가로 폭(패딩 포함)을 계산합니다."""
+        return self.scroll_area.viewport().width() - 40
+
+
+    # ==========================================
+    # v1.2.1 추가: 초기화 로직 캡슐화
+    # ==========================================
+    def clear_image_cards(self):
+        """현재 출력된 모든 ImageCard를 제거하고 뷰어를 초기 상태로 되돌립니다."""
+        for card in self.image_cards:
+            self.scroll_layout.removeWidget(card)
+            card.deleteLater()
+            
+        self.image_cards.clear()
+        self.viewer_label.show()
+
+
     def open_folder(self):
         folder_path = QFileDialog.getExistingDirectory(self, "저장소 폴더 선택", "")
         
         if folder_path:
             self.current_folder = folder_path
+            
+            # v1.2.1 개선: 새 폴더를 열면 프로젝트를 초기화하고 화면 정리
+            self.current_project = None
+            self.clear_image_cards()
             
             self.project_list.blockSignals(True)
             self.project_list.clear()
@@ -110,6 +135,7 @@ class MainWindow(QMainWindow):
                 
             self.project_list.blockSignals(False)
                 
+            # v1.2.1 개선: 상태바 문구를 기본 상태로 전환
             if len(projects) > 0:
                 self.status_bar.showMessage(f"작품 {len(projects)}개를 불러왔습니다.")
             else:
@@ -120,36 +146,59 @@ class MainWindow(QMainWindow):
         if not current or not self.current_folder:
             return
             
-        project_name = current.text()
-        project_path = os.path.join(self.current_folder, project_name)
+        self.current_project = current.text()
+        self.refresh_project()
+
+
+    # ==========================================
+    # v1.2.1 개선: 새로고침 버튼 UX 전용 래퍼
+    # ==========================================
+    def on_action_refresh(self):
+        """툴바의 새로고침 버튼 클릭 시 실행됩니다."""
+        self.refresh_project()
+        
+        # 새로고침이 성공적으로 완료되었을 때만 완료 안내 문구 표시
+        if self.current_folder and self.current_project:
+            self.status_bar.showMessage(f"새로고침 완료: '{self.current_project}' - {len(self.image_cards)}개의 Turn을 불러왔습니다.")
+
+
+    def refresh_project(self):
+        """현재 선택된 프로젝트의 이미지를 디스크에서 다시 읽어와 재출력합니다."""
+        # v1.2.1 개선: 안내 메시지를 띄우고 자연스럽게 종료
+        if not self.current_folder or not self.current_project:
+            self.status_bar.showMessage("먼저 작품을 선택하세요.")
+            return
+            
+        project_path = os.path.join(self.current_folder, self.current_project)
         
         images = image_loader.load_images(project_path)
         merged_data_list = image_merger.merge_images(project_path, images)
         
-        self.display_images(merged_data_list, project_name)
+        self.display_images(merged_data_list, self.current_project)
 
 
     def display_images(self, merged_data_list, project_name):
-        for card in self.image_cards:
-            self.scroll_layout.removeWidget(card)
-            card.deleteLater()
-        self.image_cards.clear()
+        # v1.2.1 개선: 중복된 삭제 로직 대신 메서드 호출
+        self.clear_image_cards()
 
         if not merged_data_list:
-            self.viewer_label.show()
             self.status_bar.showMessage(f"'{project_name}'에 표시할 이미지가 없습니다.")
             return
             
+        # 데이터가 있으므로 Placeholder 숨김
         self.viewer_label.hide()
         
-        available_width = self.scroll_area.viewport().width() - 40
+        available_width = self.get_available_width()
         
         for data in merged_data_list:
             pil_img = data["image"]
             pixmap = image_converter.pil_to_pixmap(pil_img)
             
-            # v1.1 변경: 원본 픽스맵을 넘기고, ImageCard 내부에서 사이즈 조절
-            card = image_card.ImageCard(data["turn"], data["files"], pixmap)
+            card = image_card.ImageCard(
+                turn=data["turn"],
+                files=data["files"],
+                pixmap=pixmap
+            )
             card.set_display_width(available_width)
             
             insert_index = self.scroll_layout.count() - 1
@@ -157,17 +206,15 @@ class MainWindow(QMainWindow):
             
             self.image_cards.append(card)
             
-        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 턴(카드)을 불러왔습니다.")
+        # v1.2.1 개선: 문구를 조금 더 부드럽게 통일
+        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 Turn을 불러왔습니다.")
 
-    # ==========================================
-    # v1.1 추가: 창 크기 변경 시 자동 리사이징 적용
-    # ==========================================
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         
-        # UI가 완전히 초기화되어 scroll_area가 존재하고, 표시 중인 카드가 있을 때만 실행
         if hasattr(self, 'scroll_area') and self.image_cards:
-            available_width = self.scroll_area.viewport().width() - 40
+            available_width = self.get_available_width()
             for card in self.image_cards:
                 card.set_display_width(available_width)
 
