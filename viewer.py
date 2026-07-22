@@ -1,10 +1,11 @@
 import sys
 import os
+import PySide6
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QStatusBar, QSplitter,
     QListWidget, QScrollArea, QLabel, QVBoxLayout, QWidget, QFrame,
     QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
-    QLineEdit
+    QLineEdit, QDialog, QGroupBox, QPushButton
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
@@ -14,6 +15,71 @@ import image_merger
 import image_converter
 import image_card
 import project_manager
+import config_manager  # v1.8 추가: 설정 관리 모듈
+
+
+# ==========================================
+# v1.8 추가: 설정 창 다이얼로그 UI
+# ==========================================
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None, config=None):
+        super().__init__(parent)
+        self.setWindowTitle("설정")
+        self.resize(450, 350)
+        self.config = config
+        
+        main_layout = QVBoxLayout(self)
+        
+        # 1. 프로그램 정보 그룹
+        info_group = QGroupBox("프로그램 정보")
+        info_layout = QVBoxLayout(info_group)
+        
+        info_layout.addWidget(QLabel("<b>PR Log Image Storage</b>"))
+        info_layout.addWidget(QLabel("Version: v1.8"))
+        info_layout.addWidget(QLabel("Developer: -"))
+        info_layout.addWidget(QLabel("Build: 2026.07"))
+        info_layout.addWidget(QLabel(f"Python Version: {sys.version.split()[0]}"))
+        info_layout.addWidget(QLabel(f"PySide Version: {PySide6.__version__}"))
+        main_layout.addWidget(info_group)
+        
+        # 2. 기본 저장소 설정 그룹
+        storage_group = QGroupBox("기본 저장소 설정")
+        storage_layout = QVBoxLayout(storage_group)
+        
+        self.storage_label = QLabel(self.config.get("storage_root", ""))
+        self.storage_label.setWordWrap(True)
+        self.storage_label.setStyleSheet("color: #A0A0A0;") # 경로를 약간 어둡게
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.storage_label)
+        
+        change_btn = QPushButton("변경...")
+        change_btn.clicked.connect(self.change_storage)
+        btn_layout.addWidget(change_btn)
+        
+        storage_layout.addLayout(btn_layout)
+        main_layout.addWidget(storage_group)
+        
+        main_layout.addStretch()
+        
+        # 3. 닫기 버튼
+        close_btn = QPushButton("닫기")
+        close_btn.setFixedWidth(80)
+        close_btn.clicked.connect(self.accept)
+        main_layout.addWidget(close_btn, alignment=Qt.AlignRight)
+
+    def change_storage(self):
+        current_root = self.config.get("storage_root", "")
+        new_dir = QFileDialog.getExistingDirectory(self, "기본 저장소 선택", current_root)
+        if new_dir:
+            self.config["storage_root"] = new_dir
+            self.storage_label.setText(new_dir)
+            # 변경 즉시 파일에 저장
+            if config_manager.save_config(self.config):
+                print(f"[설정] 저장소 위치 변경: {new_dir}")
+            else:
+                QMessageBox.warning(self, "오류", "설정을 저장하지 못했습니다.")
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -22,6 +88,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PR Log Image Storage")
         self.resize(1200, 800)
         self.setMinimumSize(800, 600)
+
+        # v1.8 추가: 시작 시 설정 불러오기
+        self.config = config_manager.load_config()
 
         self.current_folder = None
         self.current_project = None  
@@ -46,6 +115,9 @@ class MainWindow(QMainWindow):
         action_new.triggered.connect(self.create_new_project)
         action_add.triggered.connect(self.add_images_to_project)
         action_refresh.triggered.connect(self.on_action_refresh)
+        
+        # v1.8: 설정 버튼 연결
+        action_settings.triggered.connect(self.open_settings_dialog)
 
         toolbar.addAction(action_open)
         toolbar.addAction(action_new)
@@ -73,7 +145,7 @@ class MainWindow(QMainWindow):
         self.project_menu_btn = QToolButton()
         self.project_menu_btn.setText("⋮")
         self.project_menu_btn.setPopupMode(QToolButton.InstantPopup)
-        self.project_menu_btn.setEnabled(False)  # 초기 상태는 비활성화
+        self.project_menu_btn.setEnabled(False)
         
         project_menu = QMenu(self)
         action_open_folder = QAction("📂 프로젝트 폴더 열기", self)
@@ -107,7 +179,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(line)
         left_layout.addWidget(self.project_list)
 
-        # -- Turn 목록 UI & v1.7 검색창 --
+        # -- Turn 목록 UI & 검색창 --
         turn_title_label = QLabel("Turn 목록")
         turn_title_label.setFont(font)
         turn_line = QFrame()
@@ -123,7 +195,7 @@ class MainWindow(QMainWindow):
         self.turn_list.currentItemChanged.connect(self.on_turn_changed)
 
         left_layout.addWidget(turn_title_label)
-        left_layout.addWidget(self.turn_search_input) # 검색창 배치
+        left_layout.addWidget(self.turn_search_input)
         left_layout.addWidget(turn_line)
         left_layout.addWidget(self.turn_list)
 
@@ -166,7 +238,6 @@ class MainWindow(QMainWindow):
     def get_available_width(self):
         return self.scroll_area.viewport().width() - 40
 
-
     def clear_image_cards(self):
         for card in self.image_cards:
             self.scroll_layout.removeWidget(card)
@@ -186,7 +257,6 @@ class MainWindow(QMainWindow):
         self.viewer_label.show()
         self.info_label.setText("프로젝트 정보가 없습니다.")
 
-
     def reload_project_list(self, select_name=None):
         self.project_list.blockSignals(True)
         self.project_list.clear()
@@ -203,8 +273,19 @@ class MainWindow(QMainWindow):
                 self.project_list.setCurrentItem(items[0])
 
 
+    # ==========================================
+    # v1.8 추가: 설정 창 띄우기
+    # ==========================================
+    def open_settings_dialog(self):
+        dialog = SettingsDialog(self, self.config)
+        dialog.exec()
+
+
     def open_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, "저장소 폴더 선택", "")
+        # v1.8: 폴더 열기 시 config에 저장된 루트 경로를 시작 위치로 권장
+        start_dir = self.config.get("storage_root", "")
+        folder_path = QFileDialog.getExistingDirectory(self, "저장소 폴더 선택", start_dir)
+        
         if folder_path:
             self.current_folder = folder_path
             self.current_project = None
@@ -220,9 +301,6 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage("작품이 없습니다.")
 
 
-    # ==========================================
-    # v1.7 개선: 프로젝트 관리 (반환값 검사)
-    # ==========================================
     def _check_project_selected(self):
         if not self.current_folder or not self.current_project:
             QMessageBox.information(self, "안내", "먼저 관리할 작품(프로젝트)을 선택해주세요.")
@@ -263,7 +341,6 @@ class MainWindow(QMainWindow):
             
         success = project_manager.rename_project(self.current_folder, self.current_project, new_name)
         if success:
-            # v1.7: 변경 후 자동 선택 유지
             self.reload_project_list(select_name=new_name)
             self.status_bar.showMessage(f"프로젝트 이름이 '{new_name}'(으)로 변경되었습니다.")
         else:
@@ -310,9 +387,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "오류", "삭제 중 오류가 발생했습니다. 권한이나 열려있는 파일을 확인하세요.")
 
 
-    # ==========================================
-    # 공통 가져오기 함수 & 기본 이벤트
-    # ==========================================
     def _process_import_dialog(self, target_project_name):
         files, _ = QFileDialog.getOpenFileNames(
             self, "이미지 선택", "", "PNG Images (*.png *.PNG)"
@@ -412,14 +486,9 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage(f"'{self.current_project}'에 이미지를 추가했습니다.")
 
 
-    # ==========================================
-    # v1.7 개선: Turn 검색 및 상태 유지 로직
-    # ==========================================
     def filter_turns(self, text):
-        """입력된 텍스트(숫자)를 기준으로 Turn 목록을 필터링합니다."""
         for i in range(self.turn_list.count()):
             item = self.turn_list.item(i)
-            # 입력된 텍스트가 항목의 텍스트(예: "Turn 12")에 포함되는지 확인
             if text in item.text():
                 item.setHidden(False)
             else:
@@ -434,7 +503,6 @@ class MainWindow(QMainWindow):
         self.project_menu_btn.setEnabled(True)
         self.current_project = current.text()
         
-        # 프로젝트 변경 시 검색창 초기화
         self.turn_search_input.blockSignals(True)
         self.turn_search_input.clear()
         self.turn_search_input.blockSignals(False)
@@ -457,7 +525,6 @@ class MainWindow(QMainWindow):
 
 
     def on_action_refresh(self):
-        # 툴바 새로고침 클릭 시 프로젝트 리스트 갱신 및 기존 선택 상태 유지
         if self.current_folder:
             self.reload_project_list(select_name=self.current_project)
             
@@ -471,7 +538,6 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("먼저 작품을 선택하세요.")
             return
             
-        # v1.7: 새로고침 전 선택된 Turn 아이템 저장 (이미지 추가 등의 작업 후 상태 유지)
         current_turn_item = self.turn_list.currentItem()
         selected_turn_text = current_turn_item.text() if current_turn_item else None
         
@@ -492,7 +558,6 @@ class MainWindow(QMainWindow):
         
         self.display_images(merged_data_list, self.current_project)
         
-        # v1.7: 갱신된 리스트에서 기존에 선택되어 있던 Turn을 찾아 다시 선택
         if selected_turn_text:
             items = self.turn_list.findItems(selected_turn_text, Qt.MatchExactly)
             if items:
@@ -533,7 +598,6 @@ class MainWindow(QMainWindow):
             
         self.turn_list.blockSignals(False)
         
-        # 만약 필터(검색창)에 텍스트가 남아 있다면 적용
         current_filter = self.turn_search_input.text()
         if current_filter:
             self.filter_turns(current_filter)
