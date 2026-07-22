@@ -1,5 +1,8 @@
 {
-    "storage_root": "c:\\Users\\김수현\\Desktop\\Log_Storage",
+    "storage_root": "C:/Users/김수현/Desktop/logtest",
     "theme": "dark",
-    "rp_preview_studio_path": ""
+    "rp_preview_studio_path": "",
+    "project_sort": "modified",
+    "recent_projects": [],
+    "cover_expand_on_startup": false
 }

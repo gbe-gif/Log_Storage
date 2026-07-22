@@ -36,7 +36,7 @@ def load_images(project_path):
     png_files = []
     try:
         for item in os.listdir(project_path):
-            if item.lower().endswith('.png'):
+            if item.lower().endswith(('.png', '.webp')):
                 item_path = os.path.join(project_path, item)
                 if os.path.isfile(item_path):
                     png_files.append(item)

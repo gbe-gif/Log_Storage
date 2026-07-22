@@ -191,7 +191,7 @@ def save_project_meta(project_path, meta):
 def get_cover_path(base_folder):
     """저장소 루트에 있는 커버 이미지 경로를 반환합니다."""
     if not base_folder: return None
-    for ext in ['.png', '.jpg', '.jpeg']:
+    for ext in ['.png', '.jpg', '.jpeg', '.webp']:
         p = os.path.join(base_folder, f"cover{ext}")
         if os.path.exists(p): return p
     return None
