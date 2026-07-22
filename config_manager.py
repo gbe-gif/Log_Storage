@@ -1,13 +1,16 @@
 import os
 import json
 
-CONFIG_FILE = "config.json"
+# v1.9: 설정 파일 경로를 프로그램 실행 위치 기준으로 고정
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
 def get_default_config():
     """기본 설정값을 반환합니다."""
     return {
-        "storage_root": os.path.dirname(os.path.abspath(__file__)),
-        "theme": "dark"
+        "storage_root": BASE_DIR,
+        "theme": "dark",
+        "rp_preview_studio_path": ""  # v1.9 추가
     }
 
 def load_config():
@@ -21,7 +24,7 @@ def load_config():
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             config = json.load(f)
             
-            # v1.8: 누락된 키가 있으면 기본값으로 채움
+            # 누락된 키가 있으면 기본값으로 채움
             default_config = get_default_config()
             for key, value in default_config.items():
                 if key not in config:
