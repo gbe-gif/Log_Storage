@@ -21,12 +21,9 @@ def load_projects(folder_path, sort_method="modified"):
         print(f"[오류] 폴더를 읽는 중 문제가 발생했습니다: {e}")
         return []
     
-    # v1.9.1: 정렬 방식 적용
     if sort_method == "modified":
-        # 폴더의 최근 수정 시간을 기준으로 내림차순 정렬
         projects.sort(key=lambda x: os.path.getmtime(os.path.join(folder_path, x)), reverse=True)
     else:
-        # 이름순 오름차순 정렬
         projects.sort()
         
     return projects
