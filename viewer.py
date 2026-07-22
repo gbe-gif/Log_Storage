@@ -9,6 +9,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 
 import image_loader
+import image_merger
+import image_converter  # 새로 추가된 변환 모듈
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -19,6 +21,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(800, 600)
 
         self.current_folder = None
+        self.image_labels = []
         
         self._setup_ui()
 
@@ -59,10 +62,6 @@ class MainWindow(QMainWindow):
         line.setObjectName("SeparatorLine")
 
         self.project_list = QListWidget()
-        
-        # ==========================================
-        # v0.6 추가: 아이템 선택 이벤트 연결
-        # ==========================================
         self.project_list.currentItemChanged.connect(self.on_project_changed)
 
         left_layout.addWidget(title_label)
@@ -70,22 +69,22 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.project_list)
 
         # 2-2. 우측 패널 (이미지 뷰어)
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
 
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
+        self.scroll_widget = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_widget)
         
-        viewer_label = QLabel("이미지를 불러오세요.")
-        viewer_label.setAlignment(Qt.AlignCenter)
+        self.viewer_label = QLabel("이미지를 불러오세요.")
+        self.viewer_label.setAlignment(Qt.AlignCenter)
         
-        scroll_layout.addWidget(viewer_label)
-        scroll_layout.addStretch()
+        self.scroll_layout.addWidget(self.viewer_label)
+        self.scroll_layout.addStretch()
         
-        scroll_area.setWidget(scroll_widget)
+        self.scroll_area.setWidget(self.scroll_widget)
 
         splitter.addWidget(left_panel)
-        splitter.addWidget(scroll_area)
+        splitter.addWidget(self.scroll_area)
         splitter.setSizes([220, 980])
 
         # 3. 상태바 (Status Bar)
@@ -99,9 +98,7 @@ class MainWindow(QMainWindow):
         
         if folder_path:
             self.current_folder = folder_path
-            print(f"선택한 저장소 폴더: {self.current_folder}")
             
-            # 새 폴더를 열었으므로 목록 초기화 시 이벤트 핸들러가 오작동하지 않도록 임시 차단
             self.project_list.blockSignals(True)
             self.project_list.clear()
             
@@ -117,22 +114,68 @@ class MainWindow(QMainWindow):
             else:
                 self.status_bar.showMessage("작품이 없습니다.")
 
-    # ==========================================
-    # v0.6 추가: 작품 클릭(선택 변경) 이벤트 핸들러
-    # ==========================================
+
     def on_project_changed(self, current, previous):
         if not current or not self.current_folder:
             return
             
         project_name = current.text()
+        
+        # 1. 프로젝트 경로 생성
         project_path = os.path.join(self.current_folder, project_name)
         
-        # image_loader를 통해 숫자 기준으로 정렬된 이미지 목록을 가져옴
+        # 2. 이미지 목록 로드
         images = image_loader.load_images(project_path)
         
-        print(f"\n[{project_name}] 이미지 목록 ({len(images)}개):")
-        for img in images:
-            print(f"  - {img}")
+        # 3. 이미지 병합
+        merged_data_list = image_merger.merge_images(project_path, images)
+        
+        # 4. 이미지 출력 로직 호출
+        self.display_images(merged_data_list, project_name)
+
+
+    def display_images(self, merged_data_list, project_name):
+        """
+        병합된 이미지 데이터를 UI(ScrollArea)에 출력합니다.
+        """
+        # 기존 라벨 모두 제거
+        for lbl in self.image_labels:
+            self.scroll_layout.removeWidget(lbl)
+            lbl.deleteLater()
+        self.image_labels.clear()
+
+        # 이미지가 없을 경우 처리
+        if not merged_data_list:
+            self.viewer_label.show()
+            self.status_bar.showMessage(f"'{project_name}'에 표시할 이미지가 없습니다.")
+            return
+            
+        self.viewer_label.hide()
+        
+        available_width = self.scroll_area.viewport().width() - 40
+        
+        # 변환 모듈을 이용한 Pixmap 출력
+        for data in merged_data_list:
+            pil_img = data["image"]
+            
+            # image_converter를 통해 변환
+            pixmap = image_converter.pil_to_pixmap(pil_img)
+            
+            # 가로 폭에 맞게 축소
+            if pixmap.width() > available_width:
+                pixmap = pixmap.scaledToWidth(available_width, Qt.SmoothTransformation)
+                
+            lbl = QLabel()
+            lbl.setPixmap(pixmap)
+            lbl.setAlignment(Qt.AlignCenter)
+            
+            # Stretch 앞에 삽입
+            insert_index = self.scroll_layout.count() - 1
+            self.scroll_layout.insertWidget(insert_index, lbl)
+            
+            self.image_labels.append(lbl)
+            
+        self.status_bar.showMessage(f"'{project_name}' - {len(merged_data_list)}개의 이미지 턴을 불러왔습니다.")
 
 
 if __name__ == "__main__":
