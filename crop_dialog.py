@@ -6,10 +6,18 @@ from PySide6.QtGui import QImage, QPainter, QColor, QPen
 class CropWidget(QWidget):
     def __init__(self, image_path, parent=None):
         super().__init__(parent)
-        self.image = QImage(image_path)
         
-        # 이미지 로드 유효성 검사 (0으로 나누기 방지)
-        self.is_valid = not self.image.isNull() and self.image.width() > 0 and self.image.height() > 0
+        # 1. 원본 이미지 로드 및 유효성 검사
+        original_image = QImage(image_path)
+        self.is_valid = not original_image.isNull() and original_image.width() > 0 and original_image.height() > 0
+        
+        if self.is_valid:
+            # 2. 가로폭 1200 이상일 경우 1200 기준으로 축소 (비율 유지)
+            if original_image.width() > 1200:
+                self.image = original_image.scaledToWidth(1200, Qt.SmoothTransformation)
+            
+        else:
+            self.image = QImage()
         
         self.target_ratio = 6.0  # 6:1 비율 고정
         self.scale = 1.0
@@ -47,6 +55,7 @@ class CropWidget(QWidget):
         self.crop_x = (self.width() - w) / 2
         self.crop_y = (self.height() - h) / 2
         
+        # 1200px(또는 그 이하)로 맞춰진 self.image를 기준으로 최소 스케일 계산
         self.min_scale = max(self.crop_w / self.image.width(), self.crop_h / self.image.height())
         self.clamp_bounds()
 
@@ -123,7 +132,7 @@ class CropWidget(QWidget):
         if not self.is_valid:
             return # 이미지가 비정상적이면 배경만 칠하고 종료
 
-        # 확대/축소 및 이동된 원본 이미지 드로잉
+        # 확대/축소 및 이동된 이미지 드로잉
         target_rect = QRectF(self.img_x, self.img_y, self.image.width() * self.scale, self.image.height() * self.scale)
         painter.drawImage(target_rect, self.image)
 
@@ -141,7 +150,7 @@ class CropWidget(QWidget):
     def get_cropped_image(self):
         if not self.is_valid: return QImage()
         
-        # 화면상의 크롭 영역을 원본 이미지 스케일에 맞춰 매핑
+        # 화면상의 크롭 영역을 1200px(또는 이하) 기준의 self.image 스케일에 맞춰 매핑
         src_x = (self.crop_x - self.img_x) / self.scale
         src_y = (self.crop_y - self.img_y) / self.scale
         src_w = self.crop_w / self.scale
@@ -150,8 +159,11 @@ class CropWidget(QWidget):
         src_rect = QRect(int(src_x), int(src_y), int(src_w), int(src_h))
         cropped = self.image.copy(src_rect)
         
-        # 내부 표준 규격인 1200x200 (6:1)으로 고정 리사이징
-        return cropped.scaled(1200, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+        # 3. 내부 표준 규격인 1200x200으로 강제 리사이징 (크롭 박스가 정확히 6:1이므로 비율 왜곡 없음)
+        if cropped.width() != 1200 or cropped.height() != 200:
+           cropped = cropped.scaled(1200, 200, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+        return cropped
 
 
 class CropDialog(QDialog):
