@@ -713,15 +713,22 @@ class MainWindow(QMainWindow):
     def _render_cover(self, path):
         width = self.cover_widget.width()
         height = COVER_HEIGHT
-        if width < 10: return
-        
-        img = QImage(path)
-        if not img.isNull():
-            scaled = img.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            x = (scaled.width() - width) // 2
-            y = (scaled.height() - height) // 2
-            pix = QPixmap.fromImage(scaled.copy(x, y, width, height))
-            self.cover_image_label.setPixmap(pix)
+
+        if width < 10:
+           return
+
+        pix = QPixmap(path)
+        if pix.isNull():
+            return
+
+        pix = pix.scaled(
+            width,
+            height,
+            Qt.IgnoreAspectRatio,
+            Qt.SmoothTransformation
+        )
+
+        self.cover_image_label.setPixmap(pix)
 
     def toggle_cover(self):
         self.is_cover_expanded = not self.is_cover_expanded
