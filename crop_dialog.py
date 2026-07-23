@@ -14,7 +14,7 @@ class CropWidget(QWidget):
         if self.is_valid:
             # 2. 가로폭 1200 이상일 경우 1200 기준으로 축소 (비율 유지)
             if original_image.width() > 1200:
-                self.image = original_image.scaledToWidth(1200, Qt.SmoothTransformation)
+                self.image = original_image.scaledToWidth(1200)
             
         else:
             self.image = QImage()
