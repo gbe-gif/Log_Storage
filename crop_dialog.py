@@ -38,6 +38,7 @@ class CropWidget(QWidget):
             self._fit_image()
             self._initialized = True
         super().resizeEvent(event)
+        print(self.image.width(), self.image.height())
 
     def _calc_crop_box(self):
         margin = 40
