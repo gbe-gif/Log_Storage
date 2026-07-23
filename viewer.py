@@ -3,7 +3,7 @@ import os
 import subprocess
 import PySide6
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QToolBar, QStatusBar, QSplitter,
+    QApplication, QMainWindow, QToolBar, QSplitter,
     QListWidget, QScrollArea, QLabel, QVBoxLayout, QWidget, QFrame,
     QFileDialog, QInputDialog, QMessageBox, QHBoxLayout, QToolButton, QMenu,
     QLineEdit, QDialog, QGroupBox, QPushButton, QListWidgetItem, QComboBox, QCheckBox, QTextBrowser, QSizePolicy
@@ -17,7 +17,7 @@ import image_converter
 import image_card
 import project_manager
 import config_manager
-from crop_dialog import CropDialog  # 모듈화된 크롭 다이얼로그 임포트
+from crop_dialog import CropDialog
 import status_manager
 
 # ==========================================
@@ -26,6 +26,7 @@ import status_manager
 APP_VERSION = "2.2.1"
 APP_BUILD = "2026.07.24"
 APP_DEVELOPER = "게으른굼벵이"
+COVER_HEIGHT = 250  # 고정된 커버 영역 높이
 
 
 # ==========================================
@@ -231,6 +232,8 @@ class SettingsDialog(QDialog):
             dialog = CropDialog(path, self)
             if dialog.exec() == QDialog.Accepted:
                 cropped_img = dialog.get_cropped_image()
+                if cropped_img.isNull():
+                    return
                 
                 # 기존 커버 삭제 후 6:1 저장
                 project_manager.delete_cover_image(self.config["storage_root"])
@@ -413,10 +416,20 @@ class MainWindow(QMainWindow):
             self.open_specific_folder(self.config["storage_root"])
 
     def show_info(self, title, msg): QMessageBox.information(self, title, msg)
-    def show_warning(self, title, msg): QMessageBox.warning(self, title, msg)
-    def show_error(self, title, msg): QMessageBox.critical(self, title, msg)
-    def show_confirm(self, title, msg): return QMessageBox.question(self, title, msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
-    def update_status(self, msg): self.status.success(msg)
+    
+    def show_warning(self, title, msg): 
+        self.status.warning(msg)
+        QMessageBox.warning(self, title, msg)
+        
+    def show_error(self, title, msg): 
+        self.status.error(msg)
+        QMessageBox.critical(self, title, msg)
+        
+    def show_confirm(self, title, msg): 
+        return QMessageBox.question(self, title, msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
+        
+    def update_status(self, msg): 
+        self.status.success(msg)
 
     def update_action_states(self):
         has_storage = bool(self.current_folder)
@@ -456,29 +469,16 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_help)
         toolbar.addAction(self.action_settings)
 
-        # -----------------------------
-        # 상태 메시지 영역 추가 (우측 끝)
-        # -----------------------------
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         toolbar.addWidget(spacer)
 
         self.status_label = QLabel()
+        self.status_label.setStyleSheet("color: #EAEAEA; font-size: 13px; padding-right: 15px; opacity: 0.85;")
         toolbar.addWidget(self.status_label)
         
         self.status = status_manager.StatusManager(self.status_label)
-        
-        # ... 기존 스플리터 등 화면 분할 세팅 ...
 
-        # -----------------------------
-        # (_setup_ui의 가장 마지막 부분) 
-        # 기존 QStatusBar 세팅 코드를 지우고 초기화 코드로 대체합니다.
-        # -----------------------------
-        saved_sizes = self.config.get("splitter_sizes", [220, 980])
-        self.splitter.setSizes(saved_sizes)
-        self.splitter.splitterMoved.connect(self.on_splitter_moved)
-
-        self.status.reset()  # 💡 준비 완료로 시작
         self.splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
@@ -587,7 +587,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.info_label)
 
         # ---------------------------------------------------------
-        # 우측 패널 구성 (v2.2.1: 스플리터를 걷어내고 일반 레이아웃 적용)
+        # 우측 패널 구성
         # ---------------------------------------------------------
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
@@ -608,14 +608,12 @@ class MainWindow(QMainWindow):
         self.cover_image_label = QLabel()
         self.cover_image_label.setAlignment(Qt.AlignCenter)
         
-        # 높이를 200(6:1)으로 고정하여 레이아웃이 튀는 것을 방지
         self.cover_image_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
-        self.cover_image_label.setFixedHeight(200)
+        self.cover_image_label.setFixedHeight(COVER_HEIGHT)
         
         cover_layout.addWidget(self.btn_cover_toggle)
         cover_layout.addWidget(self.cover_image_label)
 
-        # Splitter 대신 QVBoxLayout에 바로 추가
         right_layout.addWidget(self.cover_widget)
 
         self.scroll_area = QScrollArea()
@@ -634,15 +632,12 @@ class MainWindow(QMainWindow):
 
         self.splitter.addWidget(left_panel)
         self.splitter.addWidget(right_panel)
-        
+
         saved_sizes = self.config.get("splitter_sizes", [220, 980])
         self.splitter.setSizes(saved_sizes)
         self.splitter.splitterMoved.connect(self.on_splitter_moved)
 
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.update_status("준비 완료")
-
+        self.status.reset()
 
     # ==========================================
     # 렌더링 및 UI 관리 로직
@@ -717,12 +712,11 @@ class MainWindow(QMainWindow):
 
     def _render_cover(self, path):
         width = self.cover_widget.width()
-        height = 200 # 고정 높이 200
+        height = COVER_HEIGHT
         if width < 10: return
         
         img = QImage(path)
         if not img.isNull():
-            # 가로를 꽉 채우되 비율은 유지하고, 넘치는 부분(위아래)을 잘라냄
             scaled = img.scaled(width, height, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
             x = (scaled.width() - width) // 2
             y = (scaled.height() - height) // 2
@@ -767,7 +761,6 @@ class MainWindow(QMainWindow):
         self.update_recent_projects_ui()
         self.load_cover_image()
 
-
     # ==========================================
     # 상호작용 및 다이얼로그 호출
     # ==========================================
@@ -811,7 +804,6 @@ class MainWindow(QMainWindow):
         if count > 0: self.update_status(f"저장소 연결 완료: 작품 {count}개를 불러왔습니다.")
         else: self.update_status("저장소 연결 완료: 작품이 없습니다.")
 
-
     # ==========================================
     # 프로젝트 관리
     # ==========================================
@@ -836,7 +828,8 @@ class MainWindow(QMainWindow):
         menu.addAction(action_open_folder)
         menu.addAction(action_rename)
         menu.addAction(action_delete)
-        self.menu_btn.setMenu(menu)
+        
+        menu.exec(self.project_list.mapToGlobal(pos))
 
     def toggle_current_project_favorite(self):
         if not self.current_project or not self.current_folder: return
@@ -895,7 +888,6 @@ class MainWindow(QMainWindow):
             else:
                 self.show_error("오류", "휴지통 이동 중 오류가 발생했습니다.")
 
-
     # ==========================================
     # 검색 및 필터 
     # ==========================================
@@ -943,7 +935,6 @@ class MainWindow(QMainWindow):
                 else:
                     bm_str = display_text.split("⭐")[1]
                     item.setHidden(text not in bm_str)
-
 
     # ==========================================
     # Turn 컨텍스트 메뉴 (북마크/이름 변경)
@@ -1004,7 +995,6 @@ class MainWindow(QMainWindow):
             meta["bookmarks"] = bms
             if project_manager.save_project_meta(project_path, meta):
                 self.refresh_project()
-
 
     # ==========================================
     # 이미지 불러오기 및 에러 메시지
