@@ -18,6 +18,7 @@ import image_card
 import project_manager
 import config_manager
 from crop_dialog import CropDialog  # 모듈화된 크롭 다이얼로그 임포트
+import status_manager
 
 # ==========================================
 # 프로그램 상수 정의
@@ -415,7 +416,7 @@ class MainWindow(QMainWindow):
     def show_warning(self, title, msg): QMessageBox.warning(self, title, msg)
     def show_error(self, title, msg): QMessageBox.critical(self, title, msg)
     def show_confirm(self, title, msg): return QMessageBox.question(self, title, msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
-    def update_status(self, msg): self.status_bar.showMessage(msg)
+    def update_status(self, msg): self.status.success(msg)
 
     def update_action_states(self):
         has_storage = bool(self.current_folder)
@@ -455,6 +456,29 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.action_help)
         toolbar.addAction(self.action_settings)
 
+        # -----------------------------
+        # 상태 메시지 영역 추가 (우측 끝)
+        # -----------------------------
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
+
+        self.status_label = QLabel()
+        toolbar.addWidget(self.status_label)
+        
+        self.status = status_manager.StatusManager(self.status_label)
+        
+        # ... 기존 스플리터 등 화면 분할 세팅 ...
+
+        # -----------------------------
+        # (_setup_ui의 가장 마지막 부분) 
+        # 기존 QStatusBar 세팅 코드를 지우고 초기화 코드로 대체합니다.
+        # -----------------------------
+        saved_sizes = self.config.get("splitter_sizes", [220, 980])
+        self.splitter.setSizes(saved_sizes)
+        self.splitter.splitterMoved.connect(self.on_splitter_moved)
+
+        self.status.reset()  # 💡 준비 완료로 시작
         self.splitter = QSplitter(Qt.Horizontal)
         self.setCentralWidget(self.splitter)
 
