@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='viewer',
+    name='Log_Storage',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
