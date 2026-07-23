@@ -1215,13 +1215,21 @@ class MainWindow(QMainWindow):
             if cover_path:
                 self._render_cover(cover_path)
 
+def resource_path(relative_path):
+    if getattr(sys, "frozen", False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    return os.path.join(base_path, relative_path)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    qss_path = os.path.join(current_dir, "assets", "dark.qss")
+    qss_path = resource_path("assets/dark.qss")
+
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+          app.setStyleSheet(f.read())
 
     window = MainWindow()
     window.show()
