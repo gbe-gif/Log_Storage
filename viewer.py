@@ -1226,6 +1226,7 @@ def resource_path(relative_path):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     qss_path = resource_path("assets/dark.qss")
+    app.setWindowIcon(QIcon(resource_path("icon.ico")))
 
     if os.path.exists(qss_path):
         with open(qss_path, "r", encoding="utf-8") as f:

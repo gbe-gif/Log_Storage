@@ -5,7 +5,7 @@ a = Analysis(
     ['viewer.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets'),],
+    datas=[('assets', 'assets'),('icon.ico', '.'),],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
